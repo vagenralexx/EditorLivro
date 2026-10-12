@@ -14,6 +14,7 @@ mod chat;
 mod glossary;
 mod model_capabilities;
 mod project_files;
+mod project_state;
 mod providers;
 mod skill;
 mod vault;
@@ -604,11 +605,19 @@ async fn epub_detect_watermark(path: String) -> Result<Option<book_epub::Detecti
     run_blocking(move || book_epub::detect_watermark(&path)).await
 }
 
+/// Estado do projeto guardado na pasta (`.livro-projeto.json`).
+#[tauri::command]
+fn project_state_load(root: String) -> Result<project_state::Loaded, String> { project_state::load(&root) }
+
+/// Atualiza uma seção do estado (valor `null` remove a seção).
+#[tauri::command]
+fn project_state_patch(root: String, section: String, value: serde_json::Value) -> Result<(), String> { project_state::patch(&root, &section, value) }
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, copies_list, copies_register, epub_detect_watermark])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 
