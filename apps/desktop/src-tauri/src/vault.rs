@@ -396,8 +396,8 @@ impl Vault {
         fs::remove_file(&path).map_err(|e| format!("Não foi possível excluir a nota: {e}"))
     }
 
-    /// Renomeia a nota e reescreve os `[[links]]` que apontavam para ela pelo título (como o Obsidian).
-    pub fn rename_note(&self, rel: &str, new_title: &str) -> Result<RenameResult, String> {
+    /// Planeja a renomeação sem tocar em disco: devolve como reescrever os links de qualquer nota.
+    pub fn plan_rename(&self, rel: &str, new_title: &str) -> Result<RenamePlan, String> {
         let new_title = sanitize_title(new_title)?;
         let folder = rel.rsplit_once('/').map(|(f, _)| f).unwrap_or("");
         let new_rel = if folder.is_empty() { format!("{new_title}.md") } else { format!("{folder}/{new_title}.md") };
@@ -405,26 +405,66 @@ impl Vault {
         if !old.is_file() { return Err("A nota não existe mais.".to_string()); }
         if new.exists() && new_rel.to_lowercase() != rel.to_lowercase() { return Err(format!("Já existe uma nota “{new_title}”.")); }
         let old_title = rel.rsplit('/').next().unwrap_or(rel).trim_end_matches(".md").to_string();
+        let resolver = Resolver::new(&self.load_all()?);
+        Ok(RenamePlan { old_rel: rel.to_string(), new_rel, old_title, new_title, resolver })
+    }
+
+    /// Renomeia a nota e reescreve os `[[links]]` que apontavam para ela pelo título (como o Obsidian).
+    pub fn rename_note(&self, rel: &str, new_title: &str) -> Result<RenameResult, String> {
+        let plan = self.plan_rename(rel, new_title)?;
         let before = self.load_all()?;
-        let resolver = Resolver::new(&before);
-        fs::rename(&old, &new).map_err(|e| format!("Não foi possível renomear: {e}"))?;
+        fs::rename(self.note_path(rel)?, self.note_path(&plan.new_rel)?).map_err(|e| format!("Não foi possível renomear: {e}"))?;
         let mut updated = 0;
         for note in &before {
-            let path = if note.meta.path == rel { new_rel.clone() } else { note.meta.path.clone() };
+            let path = if note.meta.path == rel { plan.new_rel.clone() } else { note.meta.path.clone() };
             let current = self.read_note(&path)?;
-            let rewritten = wikilink().replace_all(&current, |caps: &regex::Captures| {
-                let target = caps[1].trim();
-                let last = target.rsplit('/').next().unwrap_or(target).trim_end_matches(".md");
-                // Só reescreve links pelo título; links por apelido continuam válidos.
-                if last.eq_ignore_ascii_case(&old_title) && resolver.resolve(target).map(|p| p == rel).unwrap_or(false) {
-                    let prefix = target.rfind('/').map(|i| &target[..=i]).unwrap_or("");
-                    format!("[[{prefix}{new_title}{}{}]]", caps.get(2).map(|m| m.as_str()).unwrap_or(""), caps.get(3).map(|m| m.as_str()).unwrap_or(""))
-                } else { caps[0].to_string() }
-            }).into_owned();
-            let rewritten = if path == new_rel { rewritten.replacen(&format!("# {old_title}\n"), &format!("# {new_title}\n"), 1) } else { rewritten };
+            let rewritten = plan.rewrite(&current, path == plan.new_rel);
             if rewritten != current { self.write_note(&path, &rewritten)?; updated += 1; }
         }
-        Ok(RenameResult { new_path: new_rel, updated_notes: updated })
+        Ok(RenameResult { new_path: plan.new_rel, updated_notes: updated })
+    }
+
+    /// Notas-entidade (personagem, lugar, fio…) citadas em um texto, da mais para a menos citada.
+    pub fn references(&self, lines: &[String]) -> Result<Vec<Reference>, String> {
+        let text = fold(&lines.join("\n"));
+        let mut out: Vec<Reference> = self.load_all()?.into_iter().filter(|n| is_entity(n.meta.kind)).filter_map(|n| {
+            let count: usize = variants(&n.meta).iter().map(|name| count_word(&text, name)).sum();
+            (count > 0).then(|| Reference { path: n.meta.path, title: n.meta.title, heading: n.meta.heading, kind: n.meta.kind, count })
+        }).collect();
+        out.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.title.cmp(&b.title)));
+        Ok(out)
+    }
+
+    /// Dossiê de uma nota: conteúdo, ligações, registros por ID, seções da bíblia e outras notas que a citam.
+    pub fn entity_context(&self, rel: &str) -> Result<EntityContext, String> {
+        let content = self.read_note(rel)?;
+        let index = self.index()?;
+        let notes = self.load_all()?;
+        let me = notes.iter().find(|n| n.meta.path == rel).ok_or_else(|| "A nota não existe mais.".to_string())?;
+        let names = variants(&me.meta);
+        let mentions = |text: &str| -> usize { let f = fold(text); names.iter().map(|n| count_word(&f, n)).sum() };
+        let link_ref = |path: &str| notes.iter().find(|n| n.meta.path == path).map(|n| LinkRef { path: n.meta.path.clone(), title: n.meta.title.clone(), heading: n.meta.heading.clone(), kind: n.meta.kind });
+        let outgoing = index.edges.iter().filter(|e| e.from == rel).filter_map(|e| link_ref(&e.to)).collect();
+        let backlinks = index.edges.iter().filter(|e| e.to == rel).filter_map(|e| link_ref(&e.from)).collect();
+        let snippet = |text: &str| -> String {
+            let line = text.lines().find(|l| mentions(l) > 0).unwrap_or("");
+            clip(line.trim_start_matches(['#', '-', '*', '|', ' ']), 180)
+        };
+        let records = index.record_rows.iter().filter(|r| r.note != rel).filter(|r| mentions(&r.cells.join(" ")) > 0).take(60).map(|r| RecordMention {
+            id: r.id.clone(), note: r.note.clone(), line: r.line, status: r.status, title: r.cells.get(1).map(|c| clip(c, 160)).unwrap_or_default(), snippet: snippet(&r.cells.join(" | ")),
+        }).collect();
+        let mut sections = Vec::new();
+        for note in notes.iter().filter(|n| n.meta.path != rel && n.meta.kind != Kind::Capitulo) {
+            for (heading, body) in split_sections(&note.body) {
+                if mentions(&heading) == 0 && mentions(&body) == 0 { continue; }
+                if sections.len() >= 30 { break; }
+                sections.push(SectionMention { note: note.meta.path.clone(), note_title: note.meta.heading.clone().unwrap_or_else(|| note.meta.title.clone()), heading: heading.trim().to_string(), snippet: snippet(&format!("{heading}\n{body}")), status: crate::bible::owning_status(&note.body, heading.trim()) });
+            }
+        }
+        let mut cited: Vec<NoteMention> = notes.iter().filter(|n| n.meta.path != rel).filter_map(|n| { let count = mentions(&n.body); (count > 0).then(|| NoteMention { path: n.meta.path.clone(), title: n.meta.title.clone(), heading: n.meta.heading.clone(), kind: n.meta.kind, count }) }).collect();
+        cited.sort_by(|a, b| b.count.cmp(&a.count));
+        cited.truncate(25);
+        Ok(EntityContext { path: rel.to_string(), title: me.meta.title.clone(), heading: me.meta.heading.clone(), kind: me.meta.kind, aliases: me.meta.aliases.clone(), content, outgoing, backlinks, records, sections, notes: cited })
     }
 
     /// Quantas vezes cada nota (título, apelido, nome sem hífen ou primeiro nome) é citada em cada capítulo.
@@ -596,6 +636,51 @@ impl Vault {
         }
         entries.sort_by(|a, b| a.order.cmp(&b.order).then(a.chapter.cmp(&b.chapter)));
         Ok(entries)
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reference { pub path: String, pub title: String, pub heading: Option<String>, pub kind: Kind, pub count: usize }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkRef { pub path: String, pub title: String, pub heading: Option<String>, pub kind: Kind }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordMention { pub id: String, pub note: String, pub line: usize, pub status: Option<&'static str>, pub title: String, pub snippet: String }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SectionMention { pub note: String, pub note_title: String, pub heading: String, pub snippet: String, pub status: Option<String> }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteMention { pub path: String, pub title: String, pub heading: Option<String>, pub kind: Kind, pub count: usize }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityContext {
+    pub path: String, pub title: String, pub heading: Option<String>, pub kind: Kind, pub aliases: Vec<String>, pub content: String,
+    pub outgoing: Vec<LinkRef>, pub backlinks: Vec<LinkRef>, pub records: Vec<RecordMention>, pub sections: Vec<SectionMention>, pub notes: Vec<NoteMention>,
+}
+
+pub struct RenamePlan { pub old_rel: String, pub new_rel: String, pub old_title: String, pub new_title: String, resolver: Resolver }
+
+impl RenamePlan {
+    /// Reescreve os links que apontam para a nota (por título ou caminho). `is_renamed_note`: também ajusta o `# título`.
+    pub fn rewrite(&self, text: &str, is_renamed_note: bool) -> String {
+        let rewritten = wikilink().replace_all(text, |caps: &regex::Captures| {
+            let target = caps[1].trim();
+            let last = target.rsplit('/').next().unwrap_or(target).trim_end_matches(".md");
+            // Só reescreve links pelo título; links por apelido continuam válidos.
+            if last.eq_ignore_ascii_case(&self.old_title) && self.resolver.resolve(target).map(|p| *p == self.old_rel).unwrap_or(false) {
+                let prefix = target.rfind('/').map(|i| &target[..=i]).unwrap_or("");
+                format!("[[{prefix}{}{}{}]]", self.new_title, caps.get(2).map(|m| m.as_str()).unwrap_or(""), caps.get(3).map(|m| m.as_str()).unwrap_or(""))
+            } else { caps[0].to_string() }
+        }).into_owned();
+        if is_renamed_note { rewritten.replacen(&format!("# {}\n", self.old_title), &format!("# {}\n", self.new_title), 1) } else { rewritten }
     }
 }
 
@@ -858,6 +943,30 @@ mod tests {
         assert_eq!(get("04-Personagens/Fichas/Iris-Barbosa.md"), Some(3), "Íris, Iris Barbosa (nome inteiro) e Iris");
         assert_eq!(get("Personagens/Aria.md"), Some(2));
         assert_eq!(get("Lugares/Torre.md"), Some(2));
+    }
+
+    #[test]
+    fn references_and_entity_context_gather_the_dossier_of_a_character() {
+        let dir = project();
+        let vault = v(&dir);
+        vault.write_note("Personagens/Caio-Barbosa.md", "---\naliases: [Jordan]\n---\n# Caio Barbosa\nIrmão de [[Íris]]. Operador.\n").unwrap();
+        vault.write_note("Personagens/Íris.md", "# Íris\nLiga-se a [[Caio-Barbosa]].\n").unwrap();
+        vault.write_note("Lugares/Chácara.md", "# Chácara\nOnde Jordan dorme.\n").unwrap();
+        vault.write_note("Biblias/B.md", "---\ntipo: biblia\n---\n# B\n## 4. Personagens\n### Caio Barbosa\nAdotado.\n\n#canon/proposto\n").unwrap();
+        vault.write_note("Registros/PT.md", "| ID | Reviravolta |\n|---|---|\n| PT-L1-04 | Jordan é adotivo |\n| PT-L1-05 | outra coisa |\n").unwrap();
+        vault.write_note("Capitulos/c1.md", "---\ntipo: capitulo\n---\n# c1\nJordan chegou.\n").unwrap();
+        let refs = vault.references(&["Jordan e Íris olharam a chácara. Jordan sorriu.".to_string()]).unwrap();
+        assert_eq!(refs[0].title, "Caio-Barbosa");
+        assert_eq!(refs[0].count, 2, "o apelido Jordan conta");
+        assert!(refs.iter().any(|r| r.title == "Íris") && refs.iter().any(|r| r.title == "Chácara"));
+        let ctx = vault.entity_context("Personagens/Caio-Barbosa.md").unwrap();
+        assert!(ctx.content.contains("Operador"));
+        assert_eq!(ctx.outgoing.len(), 1);
+        assert_eq!(ctx.backlinks.len(), 1);
+        assert_eq!(ctx.records.len(), 1);
+        assert_eq!(ctx.records[0].id, "PT-L1-04");
+        assert!(ctx.sections.iter().any(|s| s.heading == "Caio Barbosa" && s.status.as_deref() == Some("proposto")));
+        assert!(ctx.notes.iter().any(|n| n.title == "c1") && ctx.notes.iter().any(|n| n.title == "Chácara"));
     }
 
     #[test]

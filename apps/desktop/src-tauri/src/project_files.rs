@@ -50,6 +50,36 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+const BACKUP_DIR: &str = ".livro/backups";
+const BACKUPS_PER_FILE: usize = 10;
+
+/// Salva um capítulo: valida que está dentro do projeto, guarda cópia do anterior em
+/// `.livro/backups/` (as 10 mais recentes por arquivo; antes ficavam espalhadas ao lado do capítulo,
+/// sem limite) e grava de forma atômica. Devolve o caminho do backup.
+pub fn save_chapter(root: &str, path: &str, content: &str) -> Result<String, String> {
+    let source = ensure_inside(root, path)?;
+    let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !matches!(ext.as_str(), "xhtml" | "html" | "htm") { return Err("Por segurança, apenas arquivos XHTML ou HTML podem ser gravados por este comando.".to_string()); }
+    if !source.is_file() { return Err("O arquivo original não existe mais ou não pode ser acessado.".to_string()); }
+    let canonical_root = fs::canonicalize(root).map_err(|e| format!("Pasta do projeto inacessível: {e}"))?;
+    let flat = source.strip_prefix(&canonical_root).map_err(|_| "O arquivo está fora da pasta do projeto.".to_string())?.to_string_lossy().replace(['/', '\\'], "__");
+    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
+    let dir = canonical_root.join(BACKUP_DIR);
+    fs::create_dir_all(&dir).map_err(|e| format!("Não foi possível criar a pasta de backups: {e}"))?;
+    let backup = dir.join(format!("{flat}.{timestamp}"));
+    fs::copy(&source, &backup).map_err(|e| format!("Não foi possível criar o backup antes de salvar: {e}"))?;
+    write_atomic(&source, content.as_bytes()).map_err(|e| format!("O backup foi criado, mas não foi possível gravar o XHTML: {e}"))?;
+    // Mantém só as mais recentes deste arquivo.
+    let prefix = format!("{flat}.");
+    let mut mine: Vec<(u64, PathBuf)> = fs::read_dir(&dir).map(|read| read.flatten().filter_map(|entry| {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        name.strip_prefix(&prefix).and_then(|stamp| stamp.parse::<u64>().ok()).map(|stamp| (stamp, entry.path()))
+    }).collect()).unwrap_or_default();
+    mine.sort();
+    while mine.len() > BACKUPS_PER_FILE { let (_, old) = mine.remove(0); let _ = fs::remove_file(old); }
+    Ok(backup.to_string_lossy().into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +113,30 @@ mod tests {
         let root = dir.path().to_str().unwrap();
         assert!(ensure_inside(root, dir.path().join("a.xhtml").to_str().unwrap()).is_ok());
         assert!(ensure_inside(root, other.path().join("b.xhtml").to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn save_chapter_backs_up_inside_livro_prunes_and_refuses_outsiders() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let root = dir.path().to_str().unwrap();
+        fs::create_dir_all(dir.path().join("OEBPS")).unwrap();
+        let chapter = dir.path().join("OEBPS/c1.xhtml");
+        fs::write(&chapter, "v0").unwrap();
+        let backup = save_chapter(root, chapter.to_str().unwrap(), "v1").unwrap();
+        assert_eq!(fs::read_to_string(&chapter).unwrap(), "v1");
+        assert_eq!(fs::read_to_string(&backup).unwrap(), "v0");
+        assert!(backup.contains(".livro") && fs::read_dir(dir.path().join("OEBPS")).unwrap().count() == 1, "nada de .backup-* ao lado do capítulo");
+        // Muitos saves: só as 10 mais recentes ficam.
+        for i in 0..14u64 { let name = format!("OEBPS__c1.xhtml.{}", 1000 + i); fs::write(dir.path().join(".livro/backups").join(name), "x").unwrap(); }
+        save_chapter(root, chapter.to_str().unwrap(), "v2").unwrap();
+        let count = fs::read_dir(dir.path().join(".livro/backups")).unwrap().count();
+        assert_eq!(count, 10);
+        // Fora do projeto e extensões erradas são recusados.
+        fs::write(other.path().join("x.xhtml"), "x").unwrap();
+        assert!(save_chapter(root, other.path().join("x.xhtml").to_str().unwrap(), "y").is_err());
+        fs::write(dir.path().join("notas.txt"), "x").unwrap();
+        assert!(save_chapter(root, dir.path().join("notas.txt").to_str().unwrap(), "y").is_err());
     }
 
     #[test]

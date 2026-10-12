@@ -95,6 +95,14 @@ Dados antigos do `localStorage` são migrados uma vez (e só apagados depois de 
 
 Aprendido com as fichas/índices enviados: `Indice.md`, `Matriz-*` e `Mapa-*` dentro da pasta de personagens deixam de ser tratados como personagens (antes "índice" no texto puxaria a nota para a memória); a lista mostra o título `# Eugênio Castelo` em vez do nome do arquivo; o modelo de ficha nova segue o padrão do autor (Ficha técnica Campo|Registro + Vida própria R10 + Aparições + Arco e conexões).
 
+## Referências no editor, renomear ficha e fluxo de trabalho (round 7)
+
+- **Referências** (botão no topo): lista os personagens/lugares/fios do caderno citados na **página** ou no **capítulo** abertos (reconhece título, apelidos e primeiro nome; o apelido novo após uma troca de nome também conta). Um clique abre o dossiê: **Ficha**, **Relações** (links de saída e backlinks), **Registros** (CF/FIO/LAC/PT que citam o nome, com estado inferido), **Bíblia e notas** (seções que citam, com o estado de canon, e outras notas). Os links do dossiê navegam dentro do painel; há atalhos para abrir a nota no Caderno e para "Substituir nome…" já preenchido.
+- **Renomear a ficha** na substituição: o arquivo segue o padrão do autor (`Caio-Barbosa.md` → `Jordan-Barbosa.md`, sem acento se o antigo não tinha), os `[[links]]` de todas as notas (por título ou caminho) são reescritos, e o desfazer devolve arquivo e links. Se a ficha é renomeada, o nome novo já é o título e não precisa de apelido.
+- **Salvar capítulo**: backups saíram de ao lado do capítulo (`.backup-<ts>`, sem limite) para `.livro/backups/` (10 mais recentes por arquivo); gravação atômica; o comando agora exige a pasta do projeto e recusa arquivos de fora dela.
+- **Fechar a janela com alterações não salvas** pergunta: salvar e sair / sair sem salvar / continuar editando.
+- **Botão "Analisar" fixo** no rodapé do painel do assistente (ficava abaixo da dobra em telas de 768–900 px).
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.

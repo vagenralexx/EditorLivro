@@ -19,6 +19,8 @@ interface NotebookDialogProps {
   genre: string;
   glossaryLines: string[];
   glossaryData: Glossary | null;
+  /** Nota a abrir ao entrar (ex.: vindo do painel de referências). */
+  initialPath?: string;
   onClose: () => void;
   onChanged: () => void;
 }
@@ -26,7 +28,7 @@ interface NotebookDialogProps {
 type Tab = "notes" | "records" | "graph" | "timeline";
 type StatusFilter = "todos" | "aberto" | "resolvido";
 
-export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, activeChapterLines, ai, genre, glossaryLines, glossaryData, onClose, onChanged }: NotebookDialogProps) {
+export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, activeChapterLines, ai, genre, glossaryLines, glossaryData, initialPath, onClose, onChanged }: NotebookDialogProps) {
   const [index, setIndex] = useState<VaultIndex | null>(null);
   const [mentions, setMentions] = useState<NoteMentions[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
@@ -58,6 +60,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   }, [projectRoot]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { if (initialPath) vaultRead(projectRoot, initialPath).then((text) => { setSelected(initialPath); setContent(text); setSaved(text); }).catch((reason) => setError(String(reason))); }, [initialPath, projectRoot]);
   // A chave evita recarregar quando o pai recria o array com o mesmo conteúdo.
   const chapterKey = chapters.map((chapter) => chapter.path).join("|");
   useEffect(() => { vaultMentions(projectRoot, chapterKey ? chapterKey.split("|") : []).then(setMentions).catch(() => setMentions([])); }, [projectRoot, chapterKey, index?.notes.length]);

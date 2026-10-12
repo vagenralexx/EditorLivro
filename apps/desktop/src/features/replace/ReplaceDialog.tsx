@@ -32,6 +32,7 @@ export function ReplaceDialog({ projectRoot, chapters, activeChapterIndex, initi
   const [chapterSel, setChapterSel] = useState<Set<string>>(new Set());
   const [noteSel, setNoteSel] = useState<Set<string>>(new Set());
   const [aliasSel, setAliasSel] = useState<Set<string>>(new Set());
+  const [renameSel, setRenameSel] = useState<Set<string>>(new Set());
   const [glossarySel, setGlossarySel] = useState(true);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState("");
@@ -41,7 +42,7 @@ export function ReplaceDialog({ projectRoot, chapters, activeChapterIndex, initi
   const [undoConflict, setUndoConflict] = useState<{ id: string; files: string[] } | null>(null);
   const [info, setInfo] = useState("");
 
-  const refreshHistory = useCallback(async () => { try { setHistory(await replaceHistory(projectRoot)); } catch { setHistory([]); } }, [projectRoot]);
+  const refreshHistory = useCallback(async () => { try { setHistory((await replaceHistory(projectRoot)) ?? []); } catch { setHistory([]); } }, [projectRoot]);
   useEffect(() => { void refreshHistory(); }, [refreshHistory]);
 
   const paths = useMemo(() => (scope === "aberto" ? [chapters[activeChapterIndex]?.path].filter(Boolean) : chapters.map((chapter) => chapter.path)), [activeChapterIndex, chapters, scope]);
@@ -55,7 +56,8 @@ export function ReplaceDialog({ projectRoot, chapters, activeChapterIndex, initi
       setPreview(next);
       setChapterSel(new Set(next.chapters.filter((c) => c.count > 0).map((c) => c.path)));
       setNoteSel(new Set(next.notes.filter((n) => n.count > 0).map((n) => n.path)));
-      setAliasSel(new Set(next.notes.filter((n) => n.entity).map((n) => n.path)));
+      setRenameSel(new Set(next.notes.filter((n) => n.entity && n.newStem).map((n) => n.path)));
+      setAliasSel(new Set(next.notes.filter((n) => n.entity && !n.newStem).map((n) => n.path)));
       setGlossarySel(next.glossaryCount > 0);
     } catch (reason) { setPreview(null); setError(String(reason)); } finally { setBusy(""); }
   }
@@ -67,13 +69,13 @@ export function ReplaceDialog({ projectRoot, chapters, activeChapterIndex, initi
 
   const selectedChapterTotal = preview?.chapters.filter((c) => chapterSel.has(c.path)).reduce((sum, c) => sum + c.count, 0) ?? 0;
   const selectedNoteTotal = preview?.notes.filter((n) => noteSel.has(n.path)).reduce((sum, n) => sum + n.count, 0) ?? 0;
-  const nothingSelected = chapterSel.size === 0 && noteSel.size === 0 && aliasSel.size === 0 && !(glossarySel && (preview?.glossaryCount ?? 0) > 0);
+  const nothingSelected = chapterSel.size === 0 && noteSel.size === 0 && aliasSel.size === 0 && renameSel.size === 0 && !(glossarySel && (preview?.glossaryCount ?? 0) > 0);
 
   async function apply() {
     if (!preview) return;
     setBusy("aplicar"); setError("");
     try {
-      const applied = await replaceApply({ ...request, chapters: [...chapterSel], notes: [...noteSel], aliasNotes: [...aliasSel], glossary: glossarySel && preview.glossaryCount > 0 });
+      const applied = await replaceApply({ ...request, chapters: [...chapterSel], notes: [...noteSel], aliasNotes: [...aliasSel].filter((path) => !renameSel.has(path)), renameNotes: [...renameSel], glossary: glossarySel && preview.glossaryCount > 0 });
       setResult(applied); setPreview(null); setConfirming(false);
       onChapterFilesChanged(applied.changedChapters);
       if (applied.notesChanged.length || applied.glossaryChanged) onVaultChanged();
@@ -97,7 +99,8 @@ export function ReplaceDialog({ projectRoot, chapters, activeChapterIndex, initi
   const noteRow = (note: Preview["notes"][number]) => (
     <li key={note.path} className="rp-note">
       <label><input type="checkbox" checked={noteSel.has(note.path)} disabled={note.count === 0} onChange={() => toggle(noteSel, setNoteSel, note.path)} /> <b>{note.title}</b> <small>{kindInfo[note.kind as NoteKind]?.label ?? note.kind} · {note.count} ocorrência(s)</small></label>
-      {note.entity && <label className="rp-sub"><input type="checkbox" checked={aliasSel.has(note.path)} onChange={() => toggle(aliasSel, setAliasSel, note.path)} /> É a ficha deste nome: adicionar <b>{replace.trim()}</b> aos apelidos, para o app continuar reconhecendo o personagem nos capítulos</label>}
+      {note.entity && note.newStem && <label className="rp-sub"><input type="checkbox" checked={renameSel.has(note.path)} onChange={() => toggle(renameSel, setRenameSel, note.path)} /> Renomear o arquivo da ficha: <code>{note.path.split("/").pop()}</code> → <code>{note.newStem}.md</code> <small>(os [[links]] que apontam para ela são atualizados; o padrão de nome do seu vault é mantido)</small></label>}
+      {note.entity && !renameSel.has(note.path) && <label className="rp-sub"><input type="checkbox" checked={aliasSel.has(note.path)} onChange={() => toggle(aliasSel, setAliasSel, note.path)} /> É a ficha deste nome: adicionar <b>{replace.trim()}</b> aos apelidos, para o app continuar reconhecendo o personagem nos capítulos</label>}
       {note.samples.length > 0 && noteSel.has(note.path) && <ul className="rp-samples">{note.samples.slice(0, 2).map((s, i) => <SampleLine key={i} sample={s} />)}</ul>}
     </li>
   );
@@ -140,13 +143,13 @@ export function ReplaceDialog({ projectRoot, chapters, activeChapterIndex, initi
             {plain.length > 0 && <><h3>Outras notas e recaps</h3><ul>{plain.map(noteRow)}</ul></>}
 
             {!confirming ? <div className="settings-actions"><button className="primary-button" type="button" disabled={nothingSelected || busy !== ""} onClick={() => setConfirming(true)}>Revisar e aplicar…</button></div>
-              : <div className="rp-confirm"><p><b>Confirmar:</b> substituir <b>{selectedChapterTotal}</b> ocorrência(s) em {chapterSel.size} capítulo(s){noteSel.size > 0 ? `, ${selectedNoteTotal} em ${noteSel.size} nota(s)` : ""}{glossarySel && preview.glossaryCount > 0 ? ", glossário" : ""}{aliasSel.size > 0 ? `, ${aliasSel.size} apelido(s) de ficha` : ""}. “{find.trim()}” → “{replace.trim()}”.</p>
+              : <div className="rp-confirm"><p><b>Confirmar:</b> substituir <b>{selectedChapterTotal}</b> ocorrência(s) em {chapterSel.size} capítulo(s){noteSel.size > 0 ? `, ${selectedNoteTotal} em ${noteSel.size} nota(s)` : ""}{glossarySel && preview.glossaryCount > 0 ? ", glossário" : ""}{aliasSel.size > 0 ? `, ${aliasSel.size} apelido(s) de ficha` : ""}{renameSel.size > 0 ? `, ${renameSel.size} ficha(s) renomeada(s) com os links` : ""}. “{find.trim()}” → “{replace.trim()}”.</p>
                 <p className="muted">Antes de gravar, os originais são copiados para <code>.livro/substituicoes</code> e há uma cópia de segurança do caderno. Capítulo aberto é salvo antes e recarregado depois.</p>
                 <div className="settings-actions"><button className="secondary-button" type="button" onClick={() => setConfirming(false)}>Voltar</button><button className="primary-button" type="button" disabled={busy !== ""} onClick={() => void apply()}>{busy === "aplicar" ? "Aplicando…" : "Aplicar substituição"}</button></div></div>}
           </>}
         </div>}
 
-        {result && <div className="settings-feedback success" role="status"><p><b>{result.replaced}</b> ocorrência(s) substituída(s): {result.changedChapters.length} capítulo(s){result.notesChanged.length ? `, ${result.notesChanged.length} nota(s)` : ""}{result.glossaryChanged ? ", glossário" : ""}{result.aliasesAdded.length ? `, apelidos em ${result.aliasesAdded.length} ficha(s)` : ""}.</p>{result.warnings.map((w) => <p key={w}>⚠ {w}</p>)}
+        {result && <div className="settings-feedback success" role="status"><p><b>{result.replaced}</b> ocorrência(s) substituída(s): {result.changedChapters.length} capítulo(s){result.notesChanged.length ? `, ${result.notesChanged.length} nota(s)` : ""}{result.glossaryChanged ? ", glossário" : ""}{result.aliasesAdded.length ? `, apelidos em ${result.aliasesAdded.length} ficha(s)` : ""}{result.renamed.length ? `, ${result.renamed.length} ficha(s) renomeada(s)` : ""}.</p>{result.warnings.map((w) => <p key={w}>⚠ {w}</p>)}
           <button className="secondary-button" type="button" disabled={busy !== ""} onClick={() => void undo(result.id, false)}>Desfazer esta substituição</button></div>}
 
         {undoConflict && <div className="settings-feedback error" role="alert"><p>Estes arquivos foram editados depois da substituição, então nada foi restaurado: {undoConflict.files.join(", ")}.</p>

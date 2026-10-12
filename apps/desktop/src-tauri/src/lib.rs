@@ -4,11 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs;
 use std::error::Error;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::Emitter;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 mod bible;
 mod chat;
@@ -408,17 +406,8 @@ fn scan_editorial(text: String, options: skill::scan::ScanOptions) -> skill::sca
 }
 
 #[tauri::command]
-fn save_xhtml_document(path: String, content: String) -> Result<SaveResult, String> {
-    let source = Path::new(&path);
-    let extension = source.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase();
-    if !matches!(extension.as_str(), "xhtml" | "html" | "htm") { return Err("Por segurança, apenas arquivos XHTML ou HTML podem ser gravados por este comando.".to_string()); }
-    if !source.is_file() { return Err("O arquivo original não existe mais ou não pode ser acessado.".to_string()); }
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| format!("Não foi possível gerar o nome do backup: {error}"))?.as_secs();
-    let original_name = source.file_name().and_then(|value| value.to_str()).ok_or_else(|| "O nome do arquivo original não é válido.".to_string())?;
-    let backup = source.with_file_name(format!("{original_name}.backup-{timestamp}"));
-    fs::copy(source, &backup).map_err(|error| format!("Não foi possível criar o backup antes de salvar: {error}"))?;
-    fs::write(source, content).map_err(|error| format!("O backup foi criado, mas não foi possível gravar o XHTML: {error}"))?;
-    Ok(SaveResult { backup_path: backup.to_string_lossy().into_owned() })
+fn save_xhtml_document(root: String, path: String, content: String) -> Result<SaveResult, String> {
+    project_files::save_chapter(&root, &path, &content).map(|backup_path| SaveResult { backup_path })
 }
 
 #[derive(Serialize)]
@@ -571,6 +560,14 @@ fn vault_create(root: String, kind: vault::Kind, title: String) -> Result<String
 fn vault_delete(root: String, path: String) -> Result<(), String> { let v = vault_for(&root)?; safety_snapshot(&root, &v, "antes-de-excluir"); v.delete_note(&path) }
 #[tauri::command]
 fn vault_rename(root: String, path: String, new_title: String) -> Result<vault::RenameResult, String> { let v = vault_for(&root)?; safety_snapshot(&root, &v, "antes-de-renomear"); v.rename_note(&path, &new_title) }
+/// Notas-entidade citadas no texto que está sendo editado.
+#[tauri::command]
+fn vault_references(root: String, lines: Vec<String>) -> Result<Vec<vault::Reference>, String> { vault_for(&root)?.references(&lines) }
+
+/// Dossiê de uma nota (ficha, ligações, registros, bíblia, outras notas).
+#[tauri::command]
+fn vault_entity(root: String, path: String) -> Result<vault::EntityContext, String> { vault_for(&root)?.entity_context(&path) }
+
 #[tauri::command]
 fn vault_timeline(root: String) -> Result<Vec<vault::TimelineEntry>, String> { vault_for(&root)?.timeline() }
 #[tauri::command]
@@ -786,7 +783,7 @@ fn project_state_patch(root: String, section: String, value: serde_json::Value) 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch, bible_catalog, bible_list, bible_create, bible_read, bible_write_section, bible_ai_draft, chapters_text, replace_preview, replace_apply, replace_history, replace_undo])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_references, vault_entity, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch, bible_catalog, bible_list, bible_create, bible_read, bible_write_section, bible_ai_draft, chapters_text, replace_preview, replace_apply, replace_history, replace_undo])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 

@@ -60,6 +60,8 @@ pub struct NoteHit {
     pub count: usize,
     /// O termo é (parte do) nome desta nota: ficha do personagem/lugar a que a palavra se refere.
     pub entity: bool,
+    /// Nome novo do arquivo se a ficha for renomeada (mantém o padrão do autor: hífens, sem acento).
+    pub new_stem: Option<String>,
     /// Nota que guarda fatos da história (ficha, bíblia, registro, mundo, fio…): pergunta antes de mexer.
     pub canon: bool,
     pub samples: Vec<Sample>,
@@ -117,6 +119,26 @@ fn replace_in_glossary(g: &Glossary, req: &Request) -> (Glossary, usize, Vec<Str
     (next, changed, warnings)
 }
 
+fn ascii_fold_keep_case(text: &str) -> String {
+    text.chars().map(|c| match c {
+        'á' | 'à' | 'â' | 'ã' | 'ä' => 'a', 'Á' | 'À' | 'Â' | 'Ã' | 'Ä' => 'A', 'é' | 'è' | 'ê' | 'ë' => 'e', 'É' | 'È' | 'Ê' | 'Ë' => 'E',
+        'í' | 'ì' | 'î' | 'ï' => 'i', 'Í' | 'Ì' | 'Î' | 'Ï' => 'I', 'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o', 'Ó' | 'Ò' | 'Ô' | 'Õ' | 'Ö' => 'O',
+        'ú' | 'ù' | 'û' | 'ü' => 'u', 'Ú' | 'Ù' | 'Û' | 'Ü' => 'U', 'ç' => 'c', 'Ç' => 'C', 'ñ' => 'n', 'Ñ' => 'N', other => other,
+    }).collect()
+}
+
+/// Nome novo do arquivo de uma ficha: troca o termo no nome e mantém o estilo do autor
+/// (separador `-`/`_`/espaço; sem acentos se o nome antigo não tinha).
+pub fn new_stem(stem: &str, req: &Request) -> Option<String> {
+    let sep = if stem.contains('-') { "-" } else if stem.contains('_') { "_" } else { " " };
+    let spaced = stem.replace(['-', '_'], " ");
+    let (changed, report) = replace::replace_in_markdown(&spaced, &req.find, &req.replace, req.options());
+    if report.count == 0 { return None; }
+    let changed = if stem.is_ascii() { ascii_fold_keep_case(&changed) } else { changed };
+    let joined = changed.split_whitespace().collect::<Vec<_>>().join(sep);
+    vault::sanitize_title(&joined).ok().filter(|name| name != stem)
+}
+
 fn name_has_term(title: &str, aliases: &[String], req: &Request) -> bool {
     let spaced = title.replace(['-', '_'], " ");
     std::iter::once(spaced.as_str()).chain(aliases.iter().map(String::as_str)).any(|t| replace::replace_in_markdown(t, &req.find, &req.replace, req.options()).1.count > 0)
@@ -138,7 +160,8 @@ pub fn preview(req: &Request, vault: &Vault) -> Result<Preview, String> {
         let (_, report) = replace::replace_in_markdown(&text, &req.find, &req.replace, opts);
         let entity = matches!(meta.kind, Kind::Personagem | Kind::Lugar | Kind::Fio | Kind::Evento | Kind::Mundo) && name_has_term(&meta.title, &meta.aliases, req);
         if report.count == 0 && !entity { continue; }
-        notes.push(NoteHit { path: meta.path, title: meta.title, kind: meta.kind, count: report.count, entity, canon: is_canon(meta.kind), samples: report.samples });
+        let new_stem = if entity { new_stem(&meta.title, req) } else { None };
+        notes.push(NoteHit { path: meta.path, title: meta.title, kind: meta.kind, count: report.count, entity, new_stem, canon: is_canon(meta.kind), samples: report.samples });
     }
     notes.sort_by(|a, b| (!a.entity, !a.canon, a.title.to_lowercase()).cmp(&(!b.entity, !b.canon, b.title.to_lowercase())));
     let glossary_count = match load_glossary(&req.root)? { Some(g) => replace_in_glossary(&g, req).1, None => 0 };
@@ -159,12 +182,15 @@ pub struct ApplyRequest {
     /// Fichas que ganham o nome novo como apelido (para a memória continuar reconhecendo o personagem).
     #[serde(default)]
     pub alias_notes: Vec<String>,
+    /// Fichas cujo ARQUIVO é renomeado (`new_stem`); os `[[links]]` que apontam para elas são reescritos.
+    #[serde(default)]
+    pub rename_notes: Vec<String>,
     #[serde(default)]
     pub glossary: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct FileEntry { kind: String, key: String, after: String }
+struct FileEntry { kind: String, key: String, after: String, #[serde(default)] moved_to: Option<String> }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -172,9 +198,9 @@ struct Manifest { id: String, created_at: String, find: String, replace: String,
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Applied { pub id: String, pub changed_chapters: Vec<String>, pub replaced: usize, pub notes_changed: Vec<String>, pub aliases_added: Vec<String>, pub glossary_changed: bool, pub warnings: Vec<String> }
+pub struct Applied { pub id: String, pub changed_chapters: Vec<String>, pub replaced: usize, pub notes_changed: Vec<String>, pub aliases_added: Vec<String>, pub renamed: Vec<(String, String)>, pub glossary_changed: bool, pub warnings: Vec<String> }
 
-struct Op { kind: &'static str, key: String, target: PathBuf, /** caminho como veio da interface (para a tela recarregar o capítulo aberto) */ shown: String, before: Vec<u8>, after: Vec<u8> }
+struct Op { kind: &'static str, key: String, target: PathBuf, /** onde o arquivo estava, se foi renomeado */ moved_from: Option<(PathBuf, String)>, /** caminho como veio da interface (para a tela recarregar o capítulo aberto) */ shown: String, before: Vec<u8>, after: Vec<u8> }
 
 fn stamp() -> String { book_epub::now_utc().replace(['-', ':'], "").replace('T', "-").trim_end_matches('Z').to_string() }
 
@@ -203,7 +229,7 @@ pub fn apply(req: &ApplyRequest, vault: &Vault) -> Result<Applied, String> {
         if out == text { continue; }
         replaced += report.count;
         let rel = inside.strip_prefix(&canonical_root).map_err(|_| "O arquivo está fora da pasta do projeto.".to_string())?.to_string_lossy().replace('\\', "/");
-        ops.push(Op { kind: "capitulo", key: rel, target: inside, shown: path.clone(), before: text.into_bytes(), after: out.into_bytes() });
+        ops.push(Op { kind: "capitulo", key: rel, target: inside, moved_from: None, shown: path.clone(), before: text.into_bytes(), after: out.into_bytes() });
     }
 
     let mut note_texts: BTreeMap<String, (String, String)> = BTreeMap::new();
@@ -220,17 +246,39 @@ pub fn apply(req: &ApplyRequest, vault: &Vault) -> Result<Applied, String> {
     }
     let mut aliases_added = Vec::new();
     for rel in &req.alias_notes {
+        if req.rename_notes.contains(rel) { continue; } // o nome novo já vira o título do arquivo
         let title = rel.rsplit('/').next().unwrap_or(rel).trim_end_matches(".md").to_string();
         let entry = note_texts.get_mut(rel).expect("carregada acima");
         let with = vault::add_aliases(&entry.1, &alias_candidates(&title, &req.base));
         if with != entry.1 { entry.1 = with; aliases_added.push(rel.clone()); }
     }
+    // Renomear fichas: os links de TODAS as notas são reescritos em memória (nada em disco ainda).
+    let mut renames: Vec<(String, vault::RenamePlan)> = Vec::new();
+    for rel in &req.rename_notes {
+        let stem = rel.rsplit('/').next().unwrap_or(rel).trim_end_matches(".md");
+        let Some(name) = new_stem(stem, &req.base) else { warnings.push(format!("{rel}: o nome do arquivo não contém o termo; não foi renomeado.")); continue };
+        match vault.plan_rename(rel, &name) { Ok(plan) => renames.push((rel.clone(), plan)), Err(error) => warnings.push(format!("{rel}: {error}")) }
+    }
+    if !renames.is_empty() {
+        for (meta, text) in vault.raw_notes()? {
+            let entry = note_texts.entry(meta.path.clone()).or_insert_with(|| (text.clone(), text));
+            for (old_rel, plan) in &renames { entry.1 = plan.rewrite(&entry.1, meta.path == *old_rel); }
+        }
+        // As fichas renomeadas entram na lista mesmo que o texto não mude (o arquivo muda de nome).
+        for (rel, _) in &renames { if !note_texts.contains_key(rel) { let text = vault.read_note(rel)?; note_texts.insert(rel.clone(), (text.clone(), text)); } }
+    }
     let mut notes_changed = Vec::new();
+    let mut renamed = Vec::new();
     for (rel, (before, after)) in &note_texts {
-        if before == after { continue; }
-        let target = project_files::resolve(vault.dir(), rel)?;
+        let plan = renames.iter().find(|(old, _)| old == rel).map(|(_, p)| p);
+        if before == after && plan.is_none() { continue; }
+        let old_target = project_files::resolve(vault.dir(), rel)?;
         notes_changed.push(rel.clone());
-        ops.push(Op { kind: "nota", key: rel.clone(), target, shown: rel.clone(), before: before.clone().into_bytes(), after: after.clone().into_bytes() });
+        let (target, moved_from) = match plan {
+            Some(p) => { renamed.push((rel.clone(), p.new_rel.clone())); (project_files::resolve(vault.dir(), &p.new_rel)?, Some((old_target, p.new_rel.clone()))) }
+            None => (old_target, None),
+        };
+        ops.push(Op { kind: "nota", key: rel.clone(), target, moved_from, shown: rel.clone(), before: before.clone().into_bytes(), after: after.clone().into_bytes() });
     }
 
     let mut glossary_changed = false;
@@ -243,7 +291,7 @@ pub fn apply(req: &ApplyRequest, vault: &Vault) -> Result<Applied, String> {
                 let before = fs::read(&target).map_err(|e| e.to_string())?;
                 let json = serde_json::to_string_pretty(&next.cleaned()).map_err(|e| e.to_string())?;
                 glossary_changed = true;
-                ops.push(Op { kind: "glossario", key: glossary::FILE_NAME.to_string(), target, shown: glossary::FILE_NAME.to_string(), before, after: json.into_bytes() });
+                ops.push(Op { kind: "glossario", key: glossary::FILE_NAME.to_string(), target, moved_from: None, shown: glossary::FILE_NAME.to_string(), before, after: json.into_bytes() });
             }
         }
     }
@@ -255,21 +303,24 @@ pub fn apply(req: &ApplyRequest, vault: &Vault) -> Result<Applied, String> {
     while base.join(&id).exists() { id.push('x'); }
     let dir = base.join(&id);
     for op in &ops { project_files::write_atomic(&dir.join("antes").join(op.kind).join(&op.key), &op.before)?; }
-    let manifest = Manifest { id: id.clone(), created_at: book_epub::now_utc(), find: req.base.find.trim().to_string(), replace: req.base.replace.trim().to_string(), files: ops.iter().map(|o| FileEntry { kind: o.kind.to_string(), key: o.key.clone(), after: replace::fingerprint(&o.after) }).collect() };
+    let manifest = Manifest { id: id.clone(), created_at: book_epub::now_utc(), find: req.base.find.trim().to_string(), replace: req.base.replace.trim().to_string(), files: ops.iter().map(|o| FileEntry { kind: o.kind.to_string(), key: o.key.clone(), after: replace::fingerprint(&o.after), moved_to: o.moved_from.as_ref().map(|(_, to)| to.clone()) }).collect() };
     project_files::write_atomic(&dir.join("manifesto.json"), serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?.as_bytes())?;
 
     // 2) Gravação; se algo falhar, reverte o que já foi escrito.
     let mut written: Vec<&Op> = Vec::new();
     for op in &ops {
-        if let Err(error) = project_files::write_atomic(&op.target, &op.after) {
-            for done in &written { let _ = project_files::write_atomic(&done.target, &done.before); }
+        let result = project_files::write_atomic(&op.target, &op.after).and_then(|_| match &op.moved_from { Some((old, _)) => fs::remove_file(old).map_err(|e| e.to_string()), None => Ok(()) });
+        if let Err(error) = result {
+            for done in written.iter().chain(std::iter::once(&op)) {
+                match &done.moved_from { Some((old, _)) => { let _ = project_files::write_atomic(old, &done.before); let _ = fs::remove_file(&done.target); } None => { let _ = project_files::write_atomic(&done.target, &done.before); } }
+            }
             let _ = fs::remove_dir_all(&dir);
             return Err(format!("Falha ao gravar {}: {error}. Nada foi alterado.", op.key));
         }
         written.push(op);
     }
     prune(&base);
-    Ok(Applied { id, changed_chapters: ops.iter().filter(|o| o.kind == "capitulo").map(|o| o.shown.clone()).collect(), replaced, notes_changed, aliases_added, glossary_changed, warnings })
+    Ok(Applied { id, changed_chapters: ops.iter().filter(|o| o.kind == "capitulo").map(|o| o.shown.clone()).collect(), replaced, notes_changed, aliases_added, renamed, glossary_changed, warnings })
 }
 
 fn prune(base: &Path) {
@@ -305,23 +356,26 @@ pub fn undo(root: &str, vault: &Vault, id: &str, force: bool) -> Result<Undone, 
     let dir = project_files::resolve(root, DIR)?.join(id);
     let manifest: Manifest = serde_json::from_str(&fs::read_to_string(dir.join("manifesto.json")).map_err(|_| "Substituição não encontrada.".to_string())?).map_err(|e| format!("Manifesto ilegível: {e}"))?;
     let canonical_root = fs::canonicalize(root).map_err(|e| e.to_string())?;
-    let mut plan: Vec<(PathBuf, Vec<u8>, &FileEntry)> = Vec::new();
+    let mut plan: Vec<(PathBuf, PathBuf, Vec<u8>, &FileEntry)> = Vec::new();
     let mut conflicts = Vec::new();
     for entry in &manifest.files {
-        let target = match entry.kind.as_str() {
-            "capitulo" => project_files::resolve(canonical_root.to_str().unwrap_or(root), &entry.key)?,
-            "nota" => project_files::resolve(vault.dir(), &entry.key)?,
-            "glossario" => glossary_path(root)?,
+        // `current`: onde o arquivo está agora; `restore_at`: onde o original deve voltar.
+        let (current, restore_at) = match entry.kind.as_str() {
+            "capitulo" => { let p = project_files::resolve(canonical_root.to_str().unwrap_or(root), &entry.key)?; (p.clone(), p) }
+            "nota" => { let old = project_files::resolve(vault.dir(), &entry.key)?; match &entry.moved_to { Some(new_rel) => (project_files::resolve(vault.dir(), new_rel)?, old), None => (old.clone(), old) } }
+            "glossario" => { let p = glossary_path(root)?; (p.clone(), p) }
             _ => continue,
         };
         let before = fs::read(dir.join("antes").join(&entry.kind).join(&entry.key)).map_err(|e| format!("Backup de {} ausente: {e}", entry.key))?;
-        match fs::read(&target) { Ok(now) if replace::fingerprint(&now) == entry.after => {} _ => conflicts.push(entry.key.clone()) }
-        plan.push((target, before, entry));
+        match fs::read(&current) { Ok(now) if replace::fingerprint(&now) == entry.after => {} _ => conflicts.push(entry.key.clone()) }
+        if entry.moved_to.is_some() && restore_at.exists() { conflicts.push(format!("{} (já existe um arquivo com o nome antigo)", entry.key)); }
+        plan.push((restore_at, current, before, entry));
     }
     if !conflicts.is_empty() && !force { return Ok(Undone { restored: Vec::new(), changed_chapters: Vec::new(), conflicts }); }
     let (mut restored, mut chapters) = (Vec::new(), Vec::new());
-    for (target, before, entry) in plan {
+    for (target, current, before, entry) in plan {
         project_files::write_atomic(&target, &before)?;
+        if current != target { let _ = fs::remove_file(&current); }
         restored.push(entry.key.clone());
         if entry.kind == "capitulo" { chapters.push(entry.key.clone()); }
     }
@@ -370,7 +424,7 @@ mod tests {
         let r = req(&fx);
         let c1 = r.paths[0].clone();
         let original = fs::read(&c1).unwrap();
-        let applied = apply(&ApplyRequest { base: r.clone(), chapters: vec![c1.clone()], notes: vec!["Personagens/Caio-Barbosa.md".into()], alias_notes: vec!["Personagens/Caio-Barbosa.md".into()], glossary: true }, &fx.vault).unwrap();
+        let applied = apply(&ApplyRequest { base: r.clone(), chapters: vec![c1.clone()], notes: vec!["Personagens/Caio-Barbosa.md".into()], alias_notes: vec!["Personagens/Caio-Barbosa.md".into()], rename_notes: vec![], glossary: true }, &fx.vault).unwrap();
         let text = fs::read_to_string(&c1).unwrap();
         assert_eq!(text, "<html><body><p>Jordan chegou. Caiozinho riu. jordan saiu.</p></body></html>");
         let ficha = fx.vault.read_note("Personagens/Caio-Barbosa.md").unwrap();
@@ -389,11 +443,52 @@ mod tests {
     }
 
     #[test]
+    fn renaming_the_sheet_keeps_the_authors_style_rewrites_path_links_and_undoes() {
+        let fx = fixture();
+        let r = req(&fx);
+        fx.vault.write_note("04/Indice.md", "# Índice\n[[Personagens/Caio-Barbosa]] · [[Caio-Barbosa|o irmão]] · [[../x/Caio-Barbosa#Arco]] · [[Outro]]\n").unwrap();
+        fx.vault.write_note("Personagens/Íris-Barbosa.md", "# Íris\nIrmã de [[Caio-Barbosa]].\n").unwrap();
+        let p = preview(&r, &fx.vault).unwrap();
+        assert_eq!(p.notes.iter().find(|n| n.title == "Caio-Barbosa").unwrap().new_stem.as_deref(), Some("Jordan-Barbosa"));
+        let request = ApplyRequest { base: r.clone(), chapters: vec![], notes: vec!["Personagens/Caio-Barbosa.md".into()], alias_notes: vec!["Personagens/Caio-Barbosa.md".into()], rename_notes: vec!["Personagens/Caio-Barbosa.md".into()], glossary: false };
+        let applied = apply(&request, &fx.vault).unwrap();
+        assert_eq!(applied.renamed, vec![("Personagens/Caio-Barbosa.md".to_string(), "Personagens/Jordan-Barbosa.md".to_string())]);
+        assert!(applied.aliases_added.is_empty(), "o nome novo já é o título do arquivo");
+        assert!(fx.vault.read_note("Personagens/Caio-Barbosa.md").is_err());
+        let moved = fx.vault.read_note("Personagens/Jordan-Barbosa.md").unwrap();
+        assert!(moved.contains("# Jordan Barbosa") && moved.contains("Jordan é irmão"));
+        let index = fx.vault.read_note("04/Indice.md").unwrap();
+        assert!(index.contains("[[Personagens/Jordan-Barbosa]] · [[Jordan-Barbosa|o irmão]]"), "{index}");
+        assert!(index.contains("[[../x/Jordan-Barbosa#Arco]]") && index.contains("[[Outro]]"), "links que o índice resolvia para esta ficha acompanham o novo nome: {index}");
+        assert!(fx.vault.read_note("Personagens/Íris-Barbosa.md").unwrap().contains("[[Jordan-Barbosa]]"));
+        let idx = fx.vault.index().unwrap();
+        assert!(idx.unresolved.iter().all(|u| !u.target.contains("Jordan")), "nenhum link novo quebrado");
+
+        let undone = undo(&r.root, &fx.vault, &applied.id, false).unwrap();
+        assert!(undone.conflicts.is_empty(), "{:?}", undone.conflicts);
+        assert!(fx.vault.read_note("Personagens/Jordan-Barbosa.md").is_err());
+        assert!(fx.vault.read_note("Personagens/Caio-Barbosa.md").unwrap().contains("# Caio Barbosa"));
+        assert!(fx.vault.read_note("04/Indice.md").unwrap().contains("[[Personagens/Caio-Barbosa]]"));
+        assert!(fx.vault.read_note("Personagens/Íris-Barbosa.md").unwrap().contains("[[Caio-Barbosa]]"));
+    }
+
+    #[test]
+    fn new_stem_follows_separator_and_accent_style() {
+        let mut r = Request { root: String::new(), paths: vec![], find: "Eugênio".into(), replace: "Mateus".into(), ignore_accents: false, preserve_case: true };
+        assert_eq!(new_stem("Eugênio-Castelo", &r).as_deref(), Some("Mateus-Castelo"));
+        r.find = "Íris".into(); r.replace = "Ágata".into();
+        assert_eq!(new_stem("Iris-Barbosa", &r), None, "nome sem acento não casa com 'Íris' (acentos exatos)");
+        r.ignore_accents = true;
+        assert_eq!(new_stem("Iris-Barbosa", &r).as_deref(), Some("Agata-Barbosa"), "arquivo sem acento continua sem acento");
+        assert_eq!(new_stem("Íris Barbosa", &r).as_deref(), Some("Ágata Barbosa"));
+    }
+
+    #[test]
     fn undo_refuses_when_a_file_was_edited_afterwards_unless_forced() {
         let fx = fixture();
         let r = req(&fx);
         let c1 = r.paths[0].clone();
-        let applied = apply(&ApplyRequest { base: r.clone(), chapters: vec![c1.clone()], notes: vec![], alias_notes: vec![], glossary: false }, &fx.vault).unwrap();
+        let applied = apply(&ApplyRequest { base: r.clone(), chapters: vec![c1.clone()], notes: vec![], alias_notes: vec![], rename_notes: vec![], glossary: false }, &fx.vault).unwrap();
         fs::write(&c1, "editado depois").unwrap();
         let blocked = undo(&r.root, &fx.vault, &applied.id, false).unwrap();
         assert_eq!(blocked.conflicts.len(), 1);
@@ -418,7 +513,7 @@ mod tests {
         r.paths = vec![outside.path().join("x.xhtml").to_string_lossy().into_owned()];
         assert!(preview(&r, &fx.vault).is_err(), "fora da pasta do projeto");
         let r = req(&fx);
-        let not_listed = apply(&ApplyRequest { base: r.clone(), chapters: vec!["/etc/passwd".into()], notes: vec![], alias_notes: vec![], glossary: false }, &fx.vault);
+        let not_listed = apply(&ApplyRequest { base: r.clone(), chapters: vec!["/etc/passwd".into()], notes: vec![], alias_notes: vec![], rename_notes: vec![], glossary: false }, &fx.vault);
         assert!(not_listed.is_err());
         assert!(undo(&r.root, &fx.vault, "../x", false).is_err());
     }
@@ -428,7 +523,7 @@ mod tests {
         let fx = fixture();
         let mut r = req(&fx);
         r.find = "Inexistente".into();
-        let result = apply(&ApplyRequest { base: r.clone(), chapters: r.paths.clone(), notes: vec![], alias_notes: vec![], glossary: false }, &fx.vault);
+        let result = apply(&ApplyRequest { base: r.clone(), chapters: r.paths.clone(), notes: vec![], alias_notes: vec![], rename_notes: vec![], glossary: false }, &fx.vault);
         assert!(result.is_err());
         assert!(!fx.dir.path().join(".livro/substituicoes").exists());
     }

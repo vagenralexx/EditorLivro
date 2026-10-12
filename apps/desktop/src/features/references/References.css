@@ -1,0 +1,21 @@
+.refs-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 15; display: flex; flex-direction: column; gap: 8px; width: min(100vw, 400px); padding: 14px 16px; overflow-y: auto; border-left: 1px solid #d8e2ef; color: #20304a; background: #fff; box-shadow: -12px 0 40px rgba(19, 33, 56, .16); font-size: 12px; }
+.refs-panel header { display: flex; align-items: flex-start; justify-content: space-between; }
+.refs-panel h3 { margin: 0; font-size: 16px; }
+.refs-scope, .refs-tabs { display: flex; gap: 4px; }
+.refs-scope button, .refs-tabs button { padding: 5px 10px; border: 1px solid #d8e2ef; border-radius: 999px; color: #42516a; background: #fff; font: inherit; font-size: 11px; font-weight: 700; }
+.refs-scope button.active, .refs-tabs button.active { color: #fff; border-color: #117b91; background: #117b91; }
+.refs-tabs { flex-wrap: wrap; }
+.refs-list, .refs-body ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.refs-list button { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 1px solid #e0e8f2; border-radius: 9px; color: #20304a; background: #f9fbfd; font: inherit; text-align: left; }
+.refs-list button:hover { background: #e8f1f8; }
+.refs-list small, .refs-body small { color: #6b7a90; }
+.refs-hint { margin-top: auto; }
+.refs-nav { display: flex; justify-content: space-between; }
+.refs-title { margin: 0; font-size: 16px; }
+.refs-body { flex: 1; min-height: 0; overflow-y: auto; }
+.refs-body h5 { margin: 10px 0 4px; color: #5b6b82; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.refs-body li > button:not(.link-button) { width: 100%; padding: 5px 8px; border: 0; border-radius: 6px; color: #2b3b55; background: none; font: inherit; text-align: left; }
+.refs-body li > button:not(.link-button):hover { background: #e8f1f8; }
+.refs-records li { padding: 6px 8px; border: 1px solid #e0e8f2; border-radius: 8px; background: #f9fbfd; }
+.refs-records p { margin: 3px 0; color: #42516a; }
+.refs-actions { display: flex; gap: 8px; padding-top: 8px; border-top: 1px solid #e6edf5; }
