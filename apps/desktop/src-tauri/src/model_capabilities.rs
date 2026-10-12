@@ -39,8 +39,9 @@ pub struct ModelEffortOptions {
 const GLM_NOTE: &str =
     "Níveis documentados pela Z.AI: baixo, alto e máximo. “Médio” não é suportado por este modelo.";
 const NEMOTRON_NOTE: &str = "Este modelo controla o modo de pensamento (enable_thinking), não níveis de esforço. Para revisão de página, o app usa o modo sem raciocínio.";
-const GROQ_GPT_OSS_NOTE: &str = "Modelos gpt-oss na Groq aceitam esforço baixo, médio e alto (guias de terceiros; confirme no seu painel da Groq). Se o servidor recusar o parâmetro, o app repete a chamada sem ele.";
-const GROQ_QWEN_NOTE: &str = "Qwen3 na Groq aceita “sem raciocínio” (none) ou “padrão” (default). Se o servidor recusar o parâmetro, o app repete a chamada sem ele.";
+const GROQ_GPT_OSS_NOTE: &str = "Referência oficial da Groq: gpt-oss-20b e gpt-oss-120b aceitam esforço baixo, médio (padrão do servidor) e alto. Para revisão de página o app usa baixo.";
+const GROQ_QWEN_NOTE: &str = "Referência oficial da Groq: modelos Qwen3 aceitam “sem raciocínio” (none) ou “padrão” (default).";
+const GROQ_QWEN38_NOTE: &str = "Referência oficial da Groq: qwen3.8 aceita sem raciocínio (padrão), baixo, médio e alto; “alto” usa o modo nativo mais profundo do modelo.";
 const DEEPSEEK_NOTE: &str = "DeepSeek: modo de pensamento ligado/desligado e esforço alto/máximo (guia oficial de Thinking Mode). Sem raciocínio é o padrão para revisão de página. Se o modelo recusar o parâmetro, o app repete a chamada sem ele.";
 const DEFAULT_NOTE: &str = "Este modelo não documenta níveis de esforço de raciocínio; os parâmetros padrão do provedor são usados.";
 
@@ -74,6 +75,7 @@ fn options(levels: &[(&str, &str)], default: &str, note: &str) -> ModelEffortOpt
 pub fn effort_options(provider: &str, model: &str) -> ModelEffortOptions {
     let model_lower = model.trim().to_ascii_lowercase();
     if provider == "groq" && model_lower.contains("gpt-oss") { return options(&[("low", "Baixo"), ("medium", "Médio"), ("high", "Alto")], "low", GROQ_GPT_OSS_NOTE); }
+    if provider == "groq" && model_lower.contains("qwen3.8") { return options(&[("none", "Sem raciocínio"), ("low", "Baixo"), ("medium", "Médio"), ("high", "Alto")], "none", GROQ_QWEN38_NOTE); }
     if provider == "groq" && model_lower.contains("qwen3") { return options(&[("none", "Sem raciocínio"), ("default", "Padrão")], "none", GROQ_QWEN_NOTE); }
     if provider == "deepseek" { return options(&[("off", "Sem raciocínio"), ("high", "Alto"), ("max", "Máximo")], "off", DEEPSEEK_NOTE); }
     if provider == "nvidia" && model_lower.starts_with("z-ai/glm") {
@@ -115,11 +117,16 @@ pub fn apply_model_parameters(
     }
     if provider == "groq" {
         let id = model.trim().to_ascii_lowercase();
-        let (levels, default): (&[&str], &str) = if id.contains("gpt-oss") { (&["low", "medium", "high"], "low") } else if id.contains("qwen3") { (&["none", "default"], "none") } else { return Ok(()); };
+        let (levels, default): (&[&str], &str) = if id.contains("gpt-oss") { (&["low", "medium", "high"], "low") } else if id.contains("qwen3.8") { (&["none", "low", "medium", "high"], "none") } else if id.contains("qwen3") { (&["none", "default"], "none") } else { return Ok(()); };
         let level = reasoning_effort.unwrap_or(default);
         if !levels.contains(&level) { return Err(format!("O nível de esforço “{level}” não é suportado por {model} na Groq. Nenhuma conversão foi aplicada.")); }
         body["reasoning_effort"] = json!(level);
-        if level != "none" { body["max_tokens"] = json!(if level == "high" { 8192 } else { 4096 }); }
+        // `max_tokens` está obsoleto na Groq; o limite de conclusão inclui os tokens de raciocínio.
+        if let Some(object) = body.as_object_mut() {
+            let base = object.remove("max_tokens").and_then(|v| v.as_u64()).unwrap_or(1400);
+            let budget = match level { "none" => base, "high" => 8192, _ => 4096 };
+            object.insert("max_completion_tokens".to_string(), json!(budget.max(base)));
+        }
         return Ok(());
     }
     if provider == "deepseek" {
@@ -284,10 +291,17 @@ mod tests {
         assert!(!effort_options("groq", "llama-3.3-70b-versatile").configurable);
         let mut body = json!({ "max_tokens": 1400 });
         apply_model_parameters(&mut body, "groq", "openai/gpt-oss-20b", Some("high")).unwrap();
-        assert_eq!((body["reasoning_effort"].as_str(), body["max_tokens"].as_u64()), (Some("high"), Some(8192)));
+        assert_eq!((body["reasoning_effort"].as_str(), body["max_completion_tokens"].as_u64()), (Some("high"), Some(8192)));
+        assert!(body.get("max_tokens").is_none(), "max_tokens está obsoleto na Groq");
         let mut qwen_body = json!({ "max_tokens": 1400 });
         apply_model_parameters(&mut qwen_body, "groq", "qwen/qwen3-32b", None).unwrap();
-        assert_eq!((qwen_body["reasoning_effort"].as_str(), qwen_body["max_tokens"].as_u64()), (Some("none"), Some(1400)));
+        assert_eq!((qwen_body["reasoning_effort"].as_str(), qwen_body["max_completion_tokens"].as_u64()), (Some("none"), Some(1400)));
+        let q38 = effort_options("groq", "qwen/qwen3.8-27b");
+        assert_eq!(q38.levels.iter().map(|l| l.value.as_str()).collect::<Vec<_>>(), vec!["none", "low", "medium", "high"]);
+        let mut q38_body = json!({ "max_tokens": 1400 });
+        apply_model_parameters(&mut q38_body, "groq", "qwen/qwen3.8-27b", Some("medium")).unwrap();
+        assert_eq!((q38_body["reasoning_effort"].as_str(), q38_body["max_completion_tokens"].as_u64()), (Some("medium"), Some(4096)));
+        assert!(apply_model_parameters(&mut json!({}), "groq", "qwen/qwen3-32b", Some("low")).is_err(), "qwen3-32b só aceita none/default");
         let mut llama = json!({ "max_tokens": 1400 });
         apply_model_parameters(&mut llama, "groq", "llama-3.3-70b-versatile", Some("low")).unwrap();
         assert!(llama.get("reasoning_effort").is_none());

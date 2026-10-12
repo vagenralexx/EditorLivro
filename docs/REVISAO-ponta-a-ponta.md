@@ -122,8 +122,9 @@ Auditoria com **axe-core** (WCAG 2.1 A/AA + boas práticas) em cada tela e diál
 |---|---|---|---|
 | NVIDIA `z-ai/glm-*` | baixo, alto, máximo | baixo | verificado ao vivo (início do projeto) |
 | NVIDIA Nemotron 3 Super/Ultra | liga/desliga pensamento (sem níveis) | desligado | documentação do modelo |
-| Groq `gpt-oss-*` | baixo, médio, alto | baixo | guias de terceiros; **não verificado ao vivo** |
-| Groq `qwen3-*` | sem raciocínio (none), padrão (default) | none | guias de terceiros; **não verificado ao vivo** |
+| Groq `gpt-oss-20b/120b` | baixo, médio, alto | baixo | **referência oficial da API Groq** (colada pelo autor); chamada real ainda não testada |
+| Groq `qwen3-*` | sem raciocínio (none), padrão (default) | none | referência oficial da API Groq |
+| Groq `qwen3.8-*` | sem raciocínio, baixo, médio, alto | none | referência oficial da API Groq |
 | DeepSeek (qualquer modelo) | sem raciocínio, alto, máximo (`thinking` + `reasoning_effort`) | sem raciocínio | guia "Thinking Mode" (via buscador; **não verificado ao vivo**) |
 
 Rede de segurança: se o servidor responder 400/422 citando `reasoning`, `reasoning_effort` ou `thinking`, o app repete a chamada **uma vez** sem esses parâmetros (como já fazia com o modo JSON). Outros modelos da Groq (ex.: Llama) e demais provedores continuam sem parâmetro de esforço.
