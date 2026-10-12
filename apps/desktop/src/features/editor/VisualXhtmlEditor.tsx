@@ -44,6 +44,7 @@ export function VisualXhtmlEditor({ documentId, documentName, source, theme, fon
   const pendingRestorePageRef = useRef<number | undefined>(undefined);
   const pointerHeldRef = useRef(false);
   const pageRef = useRef(1);
+  const navigatingUntilRef = useRef(0);
   const navigationRef = useRef({ forward: () => {}, backward: () => {} });
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
@@ -139,6 +140,7 @@ export function VisualXhtmlEditor({ documentId, documentName, source, theme, fon
     const canvas = canvasRef.current;
     if (!canvas) return;
     const boundedPage = Math.min(pageCount, Math.max(1, nextPage));
+    navigatingUntilRef.current = performance.now() + 500;
     canvas.scrollTo({ left: (boundedPage - 1) * pageStep(), behavior: "smooth" });
     window.setTimeout(() => measurePagination(boundedPage), 180);
   };
@@ -193,6 +195,47 @@ export function VisualXhtmlEditor({ documentId, documentName, source, theme, fon
     };
   }, [hasDocument]);
 
+  /**
+   * Posição horizontal do cursor dentro do conteúdo da coluna (independe do scroll), ou null quando o
+   * cursor não está no texto. Cursor recolhido sem retângulo (linha vazia) usa o caractere vizinho.
+   */
+  const caretLeft = (): number | null => {
+    const canvas = canvasRef.current;
+    const selection = window.getSelection();
+    if (!canvas || !selection?.rangeCount || !canvas.contains(selection.anchorNode)) return null;
+    const range = selection.getRangeAt(0).cloneRange();
+    range.collapse(false);
+    let rect = range.getClientRects()[0];
+    const node = range.startContainer;
+    if (!rect && node.nodeType === Node.TEXT_NODE) {
+      const length = (node.textContent ?? "").length;
+      if (range.startOffset > 0) range.setStart(node, range.startOffset - 1);
+      else if (length > 0) range.setEnd(node, 1);
+      rect = range.getClientRects()[0];
+    }
+    const left = rect?.left ?? (node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement)?.getBoundingClientRect().left;
+    if (left === undefined) return null;
+    return left - canvas.getBoundingClientRect().left + canvas.scrollLeft;
+  };
+
+  /**
+   * Ao digitar, o texto flui para a coluna seguinte e o navegador rola só o suficiente para mostrar o
+   * cursor: a página fica "escorregando", com texto cortado nas bordas. Aqui a rolagem sempre se ajusta
+   * a uma página inteira: a página do cursor (se ele mudou de coluna) ou a atual.
+   */
+  const snapToPage = (): boolean => {
+    const canvas = canvasRef.current;
+    if (!canvas || mode !== "edit" || performance.now() < navigatingUntilRef.current) return false;
+    const step = pageStep();
+    if (!step) return false;
+    const left = caretLeft();
+    const count = Math.max(1, Math.round((canvas.scrollWidth + PAGE_GAP) / step));
+    const target = left === null ? pageRef.current : Math.min(count, Math.max(1, Math.floor(left / step) + 1));
+    if (Math.abs(canvas.scrollLeft - (target - 1) * step) <= 1) return false;
+    measurePagination(target);
+    return true;
+  };
+
   // Enquanto o botão do mouse está pressionado dentro do texto, o navegador pode
   // rolar a coluna sozinho (autoscroll da seleção). Voltamos à página atual.
   const handleCanvasScroll = () => {
@@ -202,12 +245,13 @@ export function VisualXhtmlEditor({ documentId, documentName, source, theme, fon
       if (Math.abs(canvas.scrollLeft - locked) > 1) canvas.scrollTo({ left: locked, behavior: "instant" });
       return;
     }
+    if (snapToPage()) return;
     measurePagination();
   };
 
   const emitChange = () => {
     if (canvasRef.current) onChange(composeEditableXhtml(shell, canvasRef.current.innerHTML));
-    window.requestAnimationFrame(() => measurePagination());
+    window.requestAnimationFrame(() => { if (!snapToPage()) measurePagination(); });
   };
 
   const execute = (action: FormatAction, value?: string) => {
