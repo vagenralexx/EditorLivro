@@ -39,6 +39,9 @@ pub struct ModelEffortOptions {
 const GLM_NOTE: &str =
     "Níveis documentados pela Z.AI: baixo, alto e máximo. “Médio” não é suportado por este modelo.";
 const NEMOTRON_NOTE: &str = "Este modelo controla o modo de pensamento (enable_thinking), não níveis de esforço. Para revisão de página, o app usa o modo sem raciocínio.";
+const GROQ_GPT_OSS_NOTE: &str = "Modelos gpt-oss na Groq aceitam esforço baixo, médio e alto (guias de terceiros; confirme no seu painel da Groq). Se o servidor recusar o parâmetro, o app repete a chamada sem ele.";
+const GROQ_QWEN_NOTE: &str = "Qwen3 na Groq aceita “sem raciocínio” (none) ou “padrão” (default). Se o servidor recusar o parâmetro, o app repete a chamada sem ele.";
+const DEEPSEEK_NOTE: &str = "DeepSeek: modo de pensamento ligado/desligado e esforço alto/máximo (guia oficial de Thinking Mode). Sem raciocínio é o padrão para revisão de página. Se o modelo recusar o parâmetro, o app repete a chamada sem ele.";
 const DEFAULT_NOTE: &str = "Este modelo não documenta níveis de esforço de raciocínio; os parâmetros padrão do provedor são usados.";
 
 fn glm_effort_options() -> ModelEffortOptions {
@@ -63,9 +66,16 @@ fn automatic_effort_options(note: &'static str) -> ModelEffortOptions {
     }
 }
 
+fn options(levels: &[(&str, &str)], default: &str, note: &str) -> ModelEffortOptions {
+    ModelEffortOptions { configurable: true, levels: levels.iter().map(|(value, label)| EffortOption { value: value.to_string(), label: label.to_string() }).collect(), default: default.to_string(), note: note.to_string() }
+}
+
 /// Devolve as opções de esforço aplicáveis a `provider`/`model`.
 pub fn effort_options(provider: &str, model: &str) -> ModelEffortOptions {
     let model_lower = model.trim().to_ascii_lowercase();
+    if provider == "groq" && model_lower.contains("gpt-oss") { return options(&[("low", "Baixo"), ("medium", "Médio"), ("high", "Alto")], "low", GROQ_GPT_OSS_NOTE); }
+    if provider == "groq" && model_lower.contains("qwen3") { return options(&[("none", "Sem raciocínio"), ("default", "Padrão")], "none", GROQ_QWEN_NOTE); }
+    if provider == "deepseek" { return options(&[("off", "Sem raciocínio"), ("high", "Alto"), ("max", "Máximo")], "off", DEEPSEEK_NOTE); }
     if provider == "nvidia" && model_lower.starts_with("z-ai/glm") {
         return glm_effort_options();
     }
@@ -100,6 +110,27 @@ pub fn apply_model_parameters(
                 let budget = object.remove("max_tokens").and_then(|v| v.as_u64()).unwrap_or(1400);
                 object.insert("max_completion_tokens".to_string(), json!(budget.max(4096)));
             }
+        }
+        return Ok(());
+    }
+    if provider == "groq" {
+        let id = model.trim().to_ascii_lowercase();
+        let (levels, default): (&[&str], &str) = if id.contains("gpt-oss") { (&["low", "medium", "high"], "low") } else if id.contains("qwen3") { (&["none", "default"], "none") } else { return Ok(()); };
+        let level = reasoning_effort.unwrap_or(default);
+        if !levels.contains(&level) { return Err(format!("O nível de esforço “{level}” não é suportado por {model} na Groq. Nenhuma conversão foi aplicada.")); }
+        body["reasoning_effort"] = json!(level);
+        if level != "none" { body["max_tokens"] = json!(if level == "high" { 8192 } else { 4096 }); }
+        return Ok(());
+    }
+    if provider == "deepseek" {
+        match reasoning_effort.unwrap_or("off") {
+            "off" => { body["thinking"] = json!({ "type": "disabled" }); }
+            level @ ("high" | "max") => {
+                body["thinking"] = json!({ "type": "enabled" });
+                body["reasoning_effort"] = json!(level);
+                body["max_tokens"] = json!(if level == "max" { 16384 } else { 8192 });
+            }
+            other => return Err(format!("O nível de esforço “{other}” não é suportado pela DeepSeek. Níveis: sem raciocínio, alto e máximo. Nenhuma conversão foi aplicada.")),
         }
         return Ok(());
     }
@@ -146,6 +177,20 @@ pub fn apply_model_parameters(
     }
 
     Ok(())
+}
+
+/// Remove os parâmetros de raciocínio (usado para repetir a chamada quando o servidor os recusa).
+pub fn strip_effort_parameters(body: &mut Value) -> bool {
+    let Some(object) = body.as_object_mut() else { return false };
+    let removed = object.remove("reasoning_effort").is_some() | object.remove("thinking").is_some();
+    removed
+}
+
+/// O servidor respondeu 400/422 reclamando de um parâmetro de raciocínio?
+pub fn effort_rejected(status: u16, payload: &Value) -> bool {
+    if status != 400 && status != 422 { return false; }
+    let text = payload.pointer("/error/message").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| payload.to_string()).to_ascii_lowercase();
+    text.contains("reasoning_effort") || text.contains("thinking") || text.contains("reasoning")
 }
 
 #[cfg(test)]
@@ -227,6 +272,53 @@ mod tests {
         apply_model_parameters(&mut classic, "openai", "gpt-4o", None).unwrap();
         assert_eq!(classic["max_tokens"], 1400);
         assert_eq!(classic["temperature"], 0.2);
+    }
+
+    #[test]
+    fn groq_gpt_oss_and_qwen3_expose_their_levels() {
+        let oss = effort_options("groq", "openai/gpt-oss-120b");
+        assert_eq!(oss.levels.iter().map(|l| l.value.as_str()).collect::<Vec<_>>(), vec!["low", "medium", "high"]);
+        assert_eq!(oss.default, "low");
+        let qwen = effort_options("groq", "qwen/qwen3-32b");
+        assert_eq!(qwen.levels.iter().map(|l| l.value.as_str()).collect::<Vec<_>>(), vec!["none", "default"]);
+        assert!(!effort_options("groq", "llama-3.3-70b-versatile").configurable);
+        let mut body = json!({ "max_tokens": 1400 });
+        apply_model_parameters(&mut body, "groq", "openai/gpt-oss-20b", Some("high")).unwrap();
+        assert_eq!((body["reasoning_effort"].as_str(), body["max_tokens"].as_u64()), (Some("high"), Some(8192)));
+        let mut qwen_body = json!({ "max_tokens": 1400 });
+        apply_model_parameters(&mut qwen_body, "groq", "qwen/qwen3-32b", None).unwrap();
+        assert_eq!((qwen_body["reasoning_effort"].as_str(), qwen_body["max_tokens"].as_u64()), (Some("none"), Some(1400)));
+        let mut llama = json!({ "max_tokens": 1400 });
+        apply_model_parameters(&mut llama, "groq", "llama-3.3-70b-versatile", Some("low")).unwrap();
+        assert!(llama.get("reasoning_effort").is_none());
+        let mut bad = json!({});
+        assert!(apply_model_parameters(&mut bad, "groq", "openai/gpt-oss-20b", Some("none")).is_err(), "gpt-oss não tem 'none'");
+    }
+
+    #[test]
+    fn deepseek_defaults_to_thinking_off_and_maps_levels() {
+        let options = effort_options("deepseek", "deepseek-chat");
+        assert_eq!((options.configurable, options.default.as_str()), (true, "off"));
+        let mut body = json!({ "max_tokens": 1400 });
+        apply_model_parameters(&mut body, "deepseek", "deepseek-chat", None).unwrap();
+        assert_eq!(body["thinking"]["type"], "disabled");
+        assert!(body.get("reasoning_effort").is_none());
+        let mut high = json!({ "max_tokens": 1400 });
+        apply_model_parameters(&mut high, "deepseek", "deepseek-reasoner", Some("max")).unwrap();
+        assert_eq!((high["thinking"]["type"].as_str(), high["reasoning_effort"].as_str(), high["max_tokens"].as_u64()), (Some("enabled"), Some("max"), Some(16384)));
+        assert!(apply_model_parameters(&mut json!({}), "deepseek", "deepseek-chat", Some("medium")).is_err());
+    }
+
+    #[test]
+    fn rejection_detection_and_stripping_allow_a_safe_retry() {
+        let rejected = json!({ "error": { "message": "Unknown parameter: reasoning_effort for this model" } });
+        assert!(effort_rejected(400, &rejected) && effort_rejected(422, &rejected));
+        assert!(!effort_rejected(401, &rejected) && !effort_rejected(500, &rejected));
+        assert!(!effort_rejected(400, &json!({ "error": { "message": "invalid api key" } })));
+        let mut body = json!({ "model": "x", "reasoning_effort": "low", "thinking": { "type": "enabled" }, "max_tokens": 10 });
+        assert!(strip_effort_parameters(&mut body));
+        assert_eq!(body, json!({ "model": "x", "max_tokens": 10 }));
+        assert!(!strip_effort_parameters(&mut body));
     }
 
     #[test]

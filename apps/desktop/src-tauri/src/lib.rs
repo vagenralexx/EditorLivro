@@ -226,26 +226,37 @@ async fn complete_chat(on_progress: &(dyn Fn(chat::Progress) + Send + Sync), pro
     let client = ai_http_client(None)?;
     let modes: &[bool] = if wants_json { &[true, false] } else { &[false] };
     for json_mode in modes {
-        let mut body = json!({
-            // A análise é deliberadamente curta: página aberta, não capítulo inteiro.
-            "model": model.trim(), "temperature": 0.2, "max_tokens": max_tokens, "stream": true,
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        });
-        model_capabilities::apply_model_parameters(&mut body, provider, model, reasoning_effort)?;
-        if *json_mode { body["response_format"] = json!({"type": "json_object"}); }
-        let started = std::time::Instant::now();
-        eprintln!("IA: provider={provider} model={model} json_mode={json_mode} input_chars={}", user.chars().count());
-        let output = match chat::stream_chat(&client, endpoint, &api_key, &body, chat::DEFAULT_LIMITS, &CANCEL_ANALYSIS, |progress| on_progress(progress)).await {
-            Ok(output) => output,
-            Err(chat::ChatError::Http { status, body: payload, .. }) if *json_mode && response_format_rejected(status, &payload) => {
-                eprintln!("{provider}/{model} não aceita JSON nativo; usando o contrato textual compatível.");
-                continue;
-            }
-            Err(error) => {
-                eprintln!("IA: falha provider={provider} model={model} elapsed={:?}: {}", started.elapsed(), error.message());
-                return Err(error.message());
+        let mut send_effort = true;
+        let outcome = loop {
+            let mut body = json!({
+                // A análise é deliberadamente curta: página aberta, não capítulo inteiro.
+                "model": model.trim(), "temperature": 0.2, "max_tokens": max_tokens, "stream": true,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]
+            });
+            model_capabilities::apply_model_parameters(&mut body, provider, model, reasoning_effort)?;
+            if !send_effort { model_capabilities::strip_effort_parameters(&mut body); }
+            if *json_mode { body["response_format"] = json!({"type": "json_object"}); }
+            let started = std::time::Instant::now();
+            eprintln!("IA: provider={provider} model={model} json_mode={json_mode} effort_params={send_effort} input_chars={}", user.chars().count());
+            match chat::stream_chat(&client, endpoint, &api_key, &body, chat::DEFAULT_LIMITS, &CANCEL_ANALYSIS, |progress| on_progress(progress)).await {
+                Ok(output) => break Some((output, started)),
+                // O modelo não conhece o parâmetro de raciocínio: repete UMA vez sem ele.
+                Err(chat::ChatError::Http { status, body: payload, .. }) if send_effort && model_capabilities::effort_rejected(status, &payload) => {
+                    eprintln!("{provider}/{model} recusou o parâmetro de raciocínio; repetindo sem ele.");
+                    send_effort = false;
+                    continue;
+                }
+                Err(chat::ChatError::Http { status, body: payload, .. }) if *json_mode && response_format_rejected(status, &payload) => {
+                    eprintln!("{provider}/{model} não aceita JSON nativo; usando o contrato textual compatível.");
+                    break None;
+                }
+                Err(error) => {
+                    eprintln!("IA: falha provider={provider} model={model} elapsed={:?}: {}", started.elapsed(), error.message());
+                    return Err(error.message());
+                }
             }
         };
+        let Some((output, started)) = outcome else { continue };
         let text = chat::strip_think_blocks(&output.text);
         eprintln!("IA: ok provider={provider} model={model} elapsed={:?} finish_reason={} final_chars={} reasoning_chars={}", started.elapsed(), output.finish_reason.as_deref().unwrap_or("none"), text.chars().count(), output.reasoning_chars);
         if !text.trim().is_empty() { return Ok(text); }

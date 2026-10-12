@@ -116,6 +116,18 @@ Auditoria com **axe-core** (WCAG 2.1 A/AA + boas práticas) em cada tela e diál
 - **Fluxo:** atalhos **Alt+R** (referências), **Alt+H** (substituir no livro), **Alt+N** (caderno); painel de referências abre abaixo da barra superior, sem esconder os botões; registros por nome (Mapa de Âncoras, Matriz de Relações, Verificação de Pontas Soltas, 42 itens nos arquivos do autor) na aba Registros.
 - **Janela:** largura mínima do app é 1080 px (desktop), então 320/768 px da checklist não se aplicam; verificado em 1080, 1366 e 1440 px, sem rolagem horizontal.
 
+## Esforço de raciocínio por provedor (round 9)
+
+| Provedor / modelo | Níveis oferecidos | Padrão | Fonte da informação |
+|---|---|---|---|
+| NVIDIA `z-ai/glm-*` | baixo, alto, máximo | baixo | verificado ao vivo (início do projeto) |
+| NVIDIA Nemotron 3 Super/Ultra | liga/desliga pensamento (sem níveis) | desligado | documentação do modelo |
+| Groq `gpt-oss-*` | baixo, médio, alto | baixo | guias de terceiros; **não verificado ao vivo** |
+| Groq `qwen3-*` | sem raciocínio (none), padrão (default) | none | guias de terceiros; **não verificado ao vivo** |
+| DeepSeek (qualquer modelo) | sem raciocínio, alto, máximo (`thinking` + `reasoning_effort`) | sem raciocínio | guia "Thinking Mode" (via buscador; **não verificado ao vivo**) |
+
+Rede de segurança: se o servidor responder 400/422 citando `reasoning`, `reasoning_effort` ou `thinking`, o app repete a chamada **uma vez** sem esses parâmetros (como já fazia com o modo JSON). Outros modelos da Groq (ex.: Llama) e demais provedores continuam sem parâmetro de esforço.
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.
