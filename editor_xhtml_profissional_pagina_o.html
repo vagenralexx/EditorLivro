@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XHTML Pro Editor - Kindle View</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#f0f9ff', 100: '#e0f2fe', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1', 800: '#075985', 900: '#0c4a6e' },
+                        reader: { bg: '#fbfbf9', text: '#111111', darkBg: '#121212', darkText: '#e5e5e5' }
+                    },
+                    boxShadow: {
+                        'page': '0 0 20px rgba(0,0,0,0.05), 0 0px 3px rgba(0,0,0,0.03)',
+                        'page-dark': '0 0 20px rgba(0,0,0,0.5), 0 0px 3px rgba(0,0,0,0.3)'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .book-font { 
+            font-family: 'Lora', serif; 
+            line-height: 1.7;
+        }
+        .code-font { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Custom Scrollbar for sidebars */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
+        .dark ::-webkit-scrollbar-thumb { background: #52525b; }
+        ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+
+        /* Kindle Pagination Styles */
+        #kindleWrapper {
+            width: 100%;
+            max-width: 720px; /* Optimal reading width */
+            height: 70vh;     /* Fixed height to force columns */
+            margin: 0 auto;
+            position: relative;
+            overflow: hidden; /* Hide anything outside the "device" */
+        }
+
+        #visualEditor {
+            height: 100%;
+            /* Creates the horizontal pages */
+            column-width: 100%; /* Will take the full width of the wrapper */
+            column-gap: 4rem;   /* Gap between pages */
+            
+            /* Horizontal scrolling behavior */
+            overflow-y: hidden;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            scroll-behavior: smooth;
+            
+            /* Hide scrollbar for immersion */
+            scrollbar-width: none;
+            padding-bottom: 1rem; /* Prevent cutting off bottom descenders */
+        }
+        #visualEditor::-webkit-scrollbar { display: none; }
+        
+        /* Ensure pages snap correctly */
+        #visualEditor > * {
+            scroll-snap-align: start;
+        }
+
+        /* Editor Content Formatting */
+        #visualEditor:focus { outline: none; }
+        #visualEditor p { margin-bottom: 0; text-indent: 1.5em; text-align: justify; }
+        #visualEditor p.no-indent { text-indent: 0; }
+        #visualEditor p.dialogue { text-indent: 0; padding-left: 1.5em; text-indent: -1.5em; } 
+        #visualEditor .chapter-break { margin-top: 3em; margin-bottom: 2em; text-align: center; break-before: column; }
+        #visualEditor .chapter-number { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.15em; color: #71717a; text-indent: 0; text-align: center;}
+        #visualEditor .chapter-title { font-size: 1.75em; font-weight: 500; margin-bottom: 1em; text-indent: 0; text-align: center;}
+        #visualEditor .divider { text-align: center; margin: 2em 0; text-indent: 0; font-size: 1.2em;}
+        
+        .dark #visualEditor .chapter-number { color: #a1a1aa; }
+        
+        /* Active file in sidebar */
+        .file-active { background-color: #e0f2fe; color: #0369a1; border-right: 3px solid #0284c7; }
+        .dark .file-active { background-color: #0c4a6e; color: #e0f2fe; border-right: 3px solid #38bdf8; }
+
+        /* Spellcheck highlight (browser native override attempt) */
+        #visualEditor[spellcheck="true"] {
+            /* Browsers handle this natively, but we ensure it's visually clear */
+        }
+    </style>
+</head>
+
+<body class="h-full bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200 flex flex-col overflow-hidden transition-colors duration-200">
+
+    <!-- Header -->
+    <header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between shadow-sm z-20 shrink-0">
+        <div class="flex items-center space-x-4">
+            <button onclick="toggleSidebar()" class="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition">
+                <i data-lucide="menu" class="w-5 h-5"></i>
+            </button>
+            <div class="flex items-center space-x-3">
+                <div class="bg-brand-600 text-white p-1.5 rounded-lg shadow-sm">
+                    <i data-lucide="library" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h1 id="bookTitleDisplay" class="font-semibold text-sm md:text-base tracking-tight leading-tight text-slate-900 dark:text-white">Nenhum livro aberto</h1>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium tracking-wide">XHTML STUDIO &bull; KINDLE EDITION</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <button onclick="openFolder()" class="p-2 md:px-3 md:py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-sm font-medium transition flex items-center space-x-2" title="Abrir pasta com arquivos XHTML">
+                <i data-lucide="folder-tree" class="w-4 h-4"></i>
+                <span class="hidden md:inline">Abrir Pasta</span>
+            </button>
+
+            <div class="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+            <button onclick="saveCurrentFile()" class="p-2 md:px-3 md:py-1.5 bg-brand-700 hover:bg-brand-600 text-white rounded-md text-sm font-medium shadow-sm transition flex items-center space-x-2" title="Salvar alterações no arquivo original (Ctrl+S)">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                <span class="hidden md:inline">Salvar Arquivo</span>
+            </button>
+            
+            <button onclick="saveCopy()" class="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition" title="Baixar uma cópia avulsa">
+                <i data-lucide="download" class="w-4 h-4"></i>
+            </button>
+
+            <div class="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+            <button onclick="toggleDarkMode()" class="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition" title="Alternar Tema">
+                <i data-lucide="moon" class="w-4 h-4 dark:hidden"></i>
+                <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
+            </button>
+        </div>
+    </header>
+
+    <div id="editingToolbar" class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center gap-1 overflow-x-auto z-10 text-slate-600 dark:text-slate-300 shrink-0">
+        
+        <!-- View Mode Switcher -->
+        <div class="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-md mr-2 shrink-0">
+            <button onclick="switchView('visual')" id="btnVisual" class="px-3 py-1 rounded text-xs font-medium bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white transition flex items-center gap-1.5">
+                <i data-lucide="book-open" class="w-3.5 h-3.5"></i> Leitor
+            </button>
+            <button onclick="switchView('split')" id="btnSplit" class="px-3 py-1 rounded text-xs font-medium hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 text-slate-500">
+                <i data-lucide="columns" class="w-3.5 h-3.5"></i> Dividido
+            </button>
+        </div>
+
+        <div class="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 shrink-0"></div>
+
+        <!-- Inline Formatting Tools -->
+        <div class="flex items-center gap-0.5 shrink-0">
+            <button onclick="formatSelection('bold')" class="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition" title="Negrito (Ctrl+B)">
+                <i data-lucide="bold" class="w-4 h-4"></i>
+            </button>
+            <button onclick="formatSelection('italic')" class="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition" title="Itálico (Ctrl+I)">
+                <i data-lucide="italic" class="w-4 h-4"></i>
+            </button>
+            <button onclick="formatSelection('strike')" class="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition" title="Tachado">
+                <i data-lucide="strikethrough" class="w-4 h-4"></i>
+            </button>
+            <button onclick="formatSelection('superscript')" class="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition" title="Sobrescrito">
+                <i data-lucide="superscript" class="w-4 h-4"></i>
+            </button>
+        </div>
+
+        <div class="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-2 shrink-0"></div>
+
+        <!-- Insertion & Structural Tools -->
+        <div class="flex items-center gap-1 shrink-0">
+            <button onclick="insertEmDash()" class="px-2 py-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-xs font-medium transition flex items-center gap-1.5 border border-slate-200 dark:border-slate-700" title="Inserir Travessão (—)">
+                <i data-lucide="minus" class="w-3 h-3"></i> Travessão
+            </button>
+            <button onclick="insertSceneBreak()" class="px-2 py-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-xs font-medium transition flex items-center gap-1.5 border border-slate-200 dark:border-slate-700" title="Passagem de Tempo / Divisor (✦)">
+                <i data-lucide="sparkles" class="w-3 h-3"></i> Passagem
+            </button>
+            <button onclick="insertParagraph('dialogue')" class="px-2 py-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-xs font-medium transition flex items-center gap-1.5 border border-slate-200 dark:border-slate-700" title="Formatar como Diálogo">
+                <i data-lucide="message-square" class="w-3 h-3"></i> Diálogo
+            </button>
+        </div>
+
+        <!-- Right Side Tools -->
+        <div class="ml-auto flex items-center gap-2">
+            <button onclick="toggleSpellcheck()" id="btnSpellcheck" class="px-2 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-500 border border-slate-200 dark:border-slate-700" title="Ativar/Desativar Corretor PT-BR">
+                <i data-lucide="spell-check" class="w-3.5 h-3.5"></i> Corretor PT-BR
+            </button>
+            <button onclick="openFindReplaceModal()" class="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition text-slate-500" title="Localizar / Substituir (Ctrl+F)">
+                <i data-lucide="search" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </div>
+
+    <main class="flex-1 flex overflow-hidden relative">
+        
+        <!-- Sidebar (File Explorer) -->
+        <aside id="sidebar" class="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-all duration-300 z-10">
+            <div class="px-4 py-2 border-b border-slate-100 dark:border-slate-800 text-[10px] uppercase font-bold tracking-wider text-slate-500">
+                Índice do Livro
+            </div>
+            <ul id="fileList" class="flex-1 overflow-y-auto py-2 text-sm">
+                <li class="px-4 py-3 text-slate-400 text-xs text-center italic">
+                    Nenhuma pasta aberta.<br>Clique em "Abrir Pasta" acima.
+                </li>
+            </ul>
+        </aside>
+
+        <!-- Visual Editor Pane (Kindle View) -->
+        <div id="visualPane" class="flex-1 h-full overflow-hidden flex flex-col relative bg-slate-100/50 dark:bg-slate-950 transition-all duration-300">
+            
+            <!-- Top Pagination Indicator -->
+            <div class="w-full flex justify-center py-4 text-xs font-medium text-slate-400 tracking-widest uppercase">
+                <span id="chapterNameDisplay">Nenhum Capítulo</span>
+            </div>
+
+            <!-- Kindle Device Simulator -->
+            <div id="kindleWrapper" class="bg-reader-bg dark:bg-reader-darkBg text-reader-text dark:text-reader-darkText shadow-page dark:shadow-page-dark rounded-md p-8 md:p-12 pb-0 flex-1 flex flex-col">
+                
+                <!-- The Editable Paginated Content -->
+                <div id="visualEditor" 
+                     class="book-font text-base md:text-[1.1rem] w-full"
+                     contenteditable="true" 
+                     spellcheck="false"
+                     lang="pt-BR"
+                     oninput="handleInput()" 
+                     onkeydown="handleEditorKeydown(event)"
+                     onscroll="updatePaginationUI()">
+                    <!-- Content injected here -->
+                    <div class="h-full flex items-center justify-center text-slate-400 text-sm">
+                        Use o botão "Abrir Pasta" para carregar seus arquivos XHTML.
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Pagination Controls (Bottom) -->
+            <div id="paginationBottom" class="w-full max-w-3xl mx-auto flex justify-between items-center px-4 py-4 z-10">
+                <button onclick="prevPage()" class="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full text-slate-500 transition disabled:opacity-30 disabled:cursor-not-allowed" id="btnPrevPage">
+                    <i data-lucide="chevron-left" class="w-6 h-6"></i>
+                </button>
+                <div class="text-xs font-medium text-slate-400 dark:text-slate-500 tracking-widest uppercase flex items-center gap-2">
+                    <span>Posição <span id="pageCurrent">1</span> de <span id="pageTotal">1</span></span>
+                </div>
+                <button onclick="nextPage()" class="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full text-slate-500 transition disabled:opacity-30 disabled:cursor-not-allowed" id="btnNextPage">
+                    <i data-lucide="chevron-right" class="w-6 h-6"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Code Editor Pane (Split view) -->
+        <div id="codePane" class="hidden flex-1 h-full overflow-hidden bg-slate-900 flex flex-col border-l border-slate-800">
+            <div class="bg-slate-950 px-4 py-2 text-[10px] uppercase tracking-wider font-semibold font-mono text-slate-500 flex items-center justify-between border-b border-slate-800">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="file-code" class="w-3 h-3"></i>
+                    <span id="codeFileName">source.xhtml</span>
+                </div>
+                <span class="text-emerald-500/70">UTF-8 &bull; XHTML 1.1</span>
+            </div>
+            <textarea id="codeEditor" class="flex-1 w-full bg-slate-900 text-slate-300 code-font p-4 text-[13px] leading-relaxed resize-none focus:outline-none" oninput="syncCodeToVisual()"></textarea>
+        </div>
+
+    </main>
+
+    <footer class="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 flex justify-between items-center z-10 shrink-0">
+        <div class="flex items-center space-x-4">
+            <span class="flex items-center space-x-1.5">
+                <span id="saveStatusIndicator" class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                <span id="saveStatus">Aguardando arquivo</span>
+            </span>
+            <span>&bull;</span>
+            <span id="wordCount">0 palavras</span>
+        </div>
+        <div class="flex items-center gap-3">
+             <span id="folderStatus">Modo Local</span>
+        </div>
+    </footer>
+
+    <!-- Find & Replace Modal -->
+    <div id="findReplaceModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-200">
+        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-sm overflow-hidden transform scale-95 transition-transform duration-200" id="findReplaceModalInner">
+            <div class="bg-slate-50 dark:bg-slate-900/50 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <h3 class="font-medium text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <i data-lucide="search" class="w-4 h-4 text-brand-600 dark:text-brand-400"></i>
+                    <span>Localizar e Substituir</span>
+                </h3>
+                <button onclick="closeFindReplaceModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-3">
+                <div>
+                    <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Localizar</label>
+                    <input type="text" id="findInput" class="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 text-slate-900 dark:text-slate-100">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Substituir por</label>
+                    <input type="text" id="replaceInput" class="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 text-slate-900 dark:text-slate-100">
+                </div>
+                <div class="flex items-center justify-end gap-2 pt-2">
+                    <button onclick="performReplace()" class="px-3 py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-xs font-medium transition">
+                        Substituir Todos
+                    </button>
+                    <button onclick="performFindNext()" class="px-3 py-1.5 bg-brand-700 hover:bg-brand-600 text-white rounded-md text-xs font-medium shadow-sm transition">
+                        Próximo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-12 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-5 py-2.5 rounded-full shadow-2xl flex items-center space-x-3 transform translate-y-10 opacity-0 transition-all duration-300 z-50 pointer-events-none border border-slate-700">
+        <i id="toastIcon" data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+        <span id="toastMessage" class="text-xs font-medium tracking-wide">Ação realizada</span>
+    </div>
+
+    <!-- Fallback Input for Folder Selection in Iframes -->
+    <input type="file" id="folderFallbackInput" webkitdirectory multiple class="hidden" onchange="handleFallbackFolder(event)">
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // Application State
+        let directoryHandle = null;
+        let files = []; // Array of objects: { name, handle, content, doctype, htmlAttrs, headPart }
+        let currentActiveIndex = -1;
+        let syncTimeout;
+        let isSpellcheckActive = false;
+
+        // Initialize Theme based on system
+        window.addEventListener('DOMContentLoaded', () => {
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.classList.add('dark');
+            }
+            
+            // Re-calculate pagination on resize
+            window.addEventListener('resize', () => {
+                setTimeout(updatePaginationUI, 100);
+            });
+        });
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.classList.contains('w-64')) {
+                sidebar.classList.remove('w-64');
+                sidebar.classList.add('w-0', 'hidden');
+            } else {
+                sidebar.classList.remove('w-0', 'hidden');
+                sidebar.classList.add('w-64');
+            }
+        }
+
+        function toggleDarkMode() {
+            document.documentElement.classList.toggle('dark');
+        }
+
+        // --- FILE SYSTEM LOGIC --- //
+
+        async function openFolder() {
+            try {
+                // Tenta usar a API moderna primeiro (falhará no iframe por segurança)
+                if (!window.showDirectoryPicker) throw new Error("API não suportada");
+
+                // Request directory handle
+                directoryHandle = await window.showDirectoryPicker();
+                document.getElementById('folderStatus').innerText = directoryHandle.name;
+                
+                files = [];
+                const ul = document.getElementById('fileList');
+                ul.innerHTML = ''; // Clear current
+
+                // Iterate through directory
+                for await (const entry of directoryHandle.values()) {
+                    if (entry.kind === 'file' && (entry.name.endsWith('.xhtml') || entry.name.endsWith('.html'))) {
+                        files.push({
+                            name: entry.name,
+                            handle: entry,
+                            content: null, // Load on demand
+                            originalSavedContent: null
+                        });
+                    }
+                }
+
+                finishFolderLoad();
+
+            } catch (error) {
+                console.warn("API de Sistema de Arquivos bloqueada ou indisponível. Usando fallback de input.", error);
+                document.getElementById('folderFallbackInput').click();
+            }
+        }
+
+        function handleFallbackFolder(event) {
+            const selectedFiles = event.target.files;
+            if (!selectedFiles || selectedFiles.length === 0) return;
+
+            const folderName = selectedFiles[0].webkitRelativePath.split('/')[0] || "Pasta Local";
+            document.getElementById('folderStatus').innerText = folderName;
+            
+            files = [];
+            
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                if (file.name.endsWith('.xhtml') || file.name.endsWith('.html')) {
+                    files.push({
+                        name: file.name,
+                        fileObject: file, // Objeto File padrão ao invés de FileSystemHandle
+                        content: null,
+                        originalSavedContent: null
+                    });
+                }
+            }
+            
+            finishFolderLoad();
+        }
+
+        function finishFolderLoad() {
+            const ul = document.getElementById('fileList');
+            ul.innerHTML = '';
+
+            // Sort alphabetically (basic)
+            files.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', {numeric: true}));
+
+            if (files.length === 0) {
+                ul.innerHTML = '<li class="px-4 py-3 text-slate-400 text-xs text-center">Nenhum arquivo XHTML encontrado na pasta.</li>';
+                return;
+            }
+
+            // Render File List
+            files.forEach((file, index) => {
+                const li = document.createElement('li');
+                li.className = "px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center gap-2 truncate transition";
+                li.innerHTML = `<i data-lucide="file-code-2" class="w-3.5 h-3.5 text-slate-400"></i> <span class="truncate">${file.name}</span>`;
+                li.onclick = () => loadFile(index);
+                ul.appendChild(li);
+            });
+
+            lucide.createIcons();
+            const folderName = document.getElementById('folderStatus').innerText;
+            showToast(`Pasta '${folderName}' carregada com ${files.length} arquivos.`);
+            
+            // Automatically load first file
+            if (files.length > 0) loadFile(0);
+        }
+
+        async function loadFile(index) {
+            if (index < 0 || index >= files.length) return;
+            
+            // Check if current is unsaved before switching (simplified for now - just saves state visually)
+            
+            const fileData = files[index];
+            currentActiveIndex = index;
+
+            // Highlight sidebar
+            const ul = document.getElementById('fileList');
+            Array.from(ul.children).forEach((li, i) => {
+                if (i === index) {
+                    li.classList.add('file-active');
+                } else {
+                    li.classList.remove('file-active');
+                }
+            });
+
+            try {
+                let text = "";
+                // Read file content dependendo da API que foi usada
+                if (fileData.handle) {
+                    const file = await fileData.handle.getFile();
+                    text = await file.text();
+                } else if (fileData.fileObject) {
+                    text = await fileData.fileObject.text();
+                }
+                
+                fileData.originalSavedContent = text;
+                
+                parseXhtml(text, fileData);
+                
+                // Update UI
+                document.getElementById('codeFileName').innerText = fileData.name;
+                document.getElementById('chapterNameDisplay').innerText = fileData.name.replace('.xhtml', '');
+                
+                setSavedState();
+                
+                // Reset scroll to start of chapter
+                document.getElementById('visualEditor').scrollLeft = 0;
+                setTimeout(updatePaginationUI, 100);
+
+            } catch (err) {
+                console.error("Erro ao carregar arquivo:", err);
+                showToast(`Erro ao ler ${fileData.name}`, "error");
+            }
+        }
+
+        function parseXhtml(xhtmlString, targetObject) {
+            // Extract DOCTYPE
+            const doctypeMatch = xhtmlString.match(/<!DOCTYPE[^>]+>/i);
+            targetObject.doctype = doctypeMatch ? doctypeMatch[0] : '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>';
+
+            // Extract <html> tag attributes
+            const htmlTagMatch = xhtmlString.match(/<html[^>]*>/i);
+            targetObject.htmlAttrs = htmlTagMatch ? htmlTagMatch[0].replace(/<html/i, '').replace(/>$/, '').trim() : 'xmlns="http://www.w3.org/1999/xhtml" lang="pt-BR"';
+
+            // Extract <head> section
+            const headMatch = xhtmlString.match(/<head[\s\S]*?<\/head>/i);
+            targetObject.headPart = headMatch ? headMatch[0] : '<head><meta charset="UTF-8"/><title>Capítulo</title></head>';
+
+            // Extract Title for header
+            const titleMatch = targetObject.headPart.match(/<title>(.*?)<\/title>/i);
+            if (titleMatch && titleMatch[1]) {
+                document.getElementById('bookTitleDisplay').innerText = titleMatch[1];
+            }
+
+            // Extract <body> inner content
+            const bodyMatch = xhtmlString.match(/<body[\s\S]*?>([\s\S]*?)<\/body>/i);
+            const bodyContent = bodyMatch ? bodyMatch[1] : xhtmlString;
+
+            // Populate Visual Editor
+            const visualEditor = document.getElementById('visualEditor');
+            visualEditor.innerHTML = bodyContent.trim();
+
+            // Populate Code Editor
+            document.getElementById('codeEditor').value = xhtmlString;
+            
+            updateStats();
+        }
+
+        function generateXhtmlString() {
+            if (currentActiveIndex === -1) return "";
+            const fileData = files[currentActiveIndex];
+            
+            const visualEditor = document.getElementById('visualEditor');
+            const innerBodyHtml = visualEditor.innerHTML;
+
+            // Clean up content: Add newlines before block tags for readability
+            const formattedBody = innerBodyHtml
+                .replace(/<\/p>\s*<p/g, '</p>\n    <p')
+                .replace(/<div/g, '\n    <div')
+                .replace(/<\/div>/g, '\n    </div>')
+                // Remove injected spellcheck artifacts if any exist inside elements (though usually on container)
+                .replace(/ style="[^"]*"/g, '');
+
+            const fullXhtml = `${fileData.doctype}
+<html ${fileData.htmlAttrs}>
+  ${fileData.headPart}
+  <body>
+    ${formattedBody.trim()}
+  </body>
+</html>`;
+
+            return fullXhtml;
+        }
+
+        function handleInput() {
+            setUnsavedState();
+            updateStats();
+            updatePaginationUI(); // Layout might change
+            
+            clearTimeout(syncTimeout);
+            syncTimeout = setTimeout(() => {
+                syncVisualToCode();
+            }, 800);
+        }
+
+        function syncVisualToCode() {
+            const codeEditor = document.getElementById('codeEditor');
+            codeEditor.value = generateXhtmlString();
+        }
+
+        function syncCodeToVisual() {
+            setUnsavedState();
+            const codeContent = document.getElementById('codeEditor').value;
+            
+            try {
+                const bodyMatch = codeContent.match(/<body[\s\S]*?>([\s\S]*?)<\/body>/i);
+                if (bodyMatch && bodyMatch[1]) {
+                    document.getElementById('visualEditor').innerHTML = bodyMatch[1].trim();
+                }
+                updateStats();
+                setTimeout(updatePaginationUI, 50);
+            } catch(e) {}
+        }
+
+        async function saveCurrentFile() {
+            if (currentActiveIndex === -1 || !files[currentActiveIndex]) {
+                showToast("Nenhum arquivo aberto", "error");
+                return;
+            }
+            
+            syncVisualToCode(); // Force sync
+            const contentToSave = document.getElementById('codeEditor').value;
+            const fileData = files[currentActiveIndex];
+
+            try {
+                if (fileData.handle) {
+                    // Write directly to file system using the handle
+                    const writable = await fileData.handle.createWritable();
+                    await writable.write(contentToSave);
+                    await writable.close();
+                    
+                    fileData.originalSavedContent = contentToSave;
+                    setSavedState();
+                    showToast(`Arquivo ${fileData.name} salvo.`);
+                } else {
+                    // Fallback for when opened via <input> (Iframe security)
+                    showToast("Salvando cópia (Modo Seguro do Navegador)...", "info");
+                    saveCopy();
+                    fileData.originalSavedContent = contentToSave;
+                    setSavedState();
+                }
+            } catch (error) {
+                console.error("Erro ao salvar:", error);
+                showToast("Permissão negada ou erro ao salvar.", "error");
+            }
+        }
+
+        function saveCopy() {
+            if (currentActiveIndex === -1) return;
+            syncVisualToCode();
+            const content = document.getElementById('codeEditor').value;
+            const filename = files[currentActiveIndex].name;
+            const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            
+            const blob = new Blob([content], { type: "application/xhtml+xml" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `copia_${dateStr}_${filename}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("Cópia avulsa salva localmente.");
+        }
+
+        function setUnsavedState() {
+            const indicator = document.getElementById('saveStatusIndicator');
+            const status = document.getElementById('saveStatus');
+            indicator.className = "w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]";
+            status.innerText = "Modificado (Ctrl+S para salvar)";
+        }
+
+        function setSavedState() {
+            const indicator = document.getElementById('saveStatusIndicator');
+            const status = document.getElementById('saveStatus');
+            indicator.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]";
+            status.innerText = "Salvo em disco";
+        }
+
+        function updateStats() {
+            const text = document.getElementById('visualEditor').innerText || '';
+            const words = text.trim() ? (text.match(/\b\w+\b/g) || []).length : 0;
+            document.getElementById('wordCount').innerText = `${words.toLocaleString('pt-BR')} palavras`;
+        }
+
+        function updatePaginationUI() {
+            const editor = document.getElementById('visualEditor');
+            
+            // Calculate column details
+            const gap = 64; // 4rem in px (matches CSS column-gap)
+            const viewWidth = editor.clientWidth;
+            const scrollWidth = editor.scrollWidth;
+            const currentScroll = editor.scrollLeft;
+
+            // Total pages (columns)
+            // A column takes up viewWidth + gap space in scroll calculation
+            const pageCount = Math.max(1, Math.ceil(scrollWidth / (viewWidth + gap)));
+            
+            // Current page
+            const currentPage = Math.round(currentScroll / (viewWidth + gap)) + 1;
+
+            document.getElementById('pageCurrent').innerText = currentPage;
+            document.getElementById('pageTotal').innerText = pageCount;
+
+            // Button states
+            document.getElementById('btnPrevPage').disabled = currentPage <= 1;
+            document.getElementById('btnNextPage').disabled = currentPage >= pageCount;
+        }
+
+        function nextPage() {
+            const editor = document.getElementById('visualEditor');
+            const viewWidth = editor.clientWidth;
+            const gap = 64; 
+            editor.scrollBy({ left: viewWidth + gap, behavior: 'smooth' });
+            setTimeout(updatePaginationUI, 300); // Update after scroll animation
+        }
+
+        function prevPage() {
+            const editor = document.getElementById('visualEditor');
+            const viewWidth = editor.clientWidth;
+            const gap = 64;
+            editor.scrollBy({ left: -(viewWidth + gap), behavior: 'smooth' });
+            setTimeout(updatePaginationUI, 300);
+        }
+
+        function toggleSpellcheck() {
+            isSpellcheckActive = !isSpellcheckActive;
+            const editor = document.getElementById('visualEditor');
+            const btn = document.getElementById('btnSpellcheck');
+            
+            editor.setAttribute('spellcheck', isSpellcheckActive.toString());
+            
+            if(isSpellcheckActive) {
+                btn.classList.add('bg-brand-100', 'text-brand-700', 'border-brand-300');
+                btn.classList.remove('text-slate-500');
+                showToast("Corretor PT-BR Ativado", "info");
+                // Focus editor to trigger browser underline re-evaluation
+                editor.focus(); 
+            } else {
+                btn.classList.remove('bg-brand-100', 'text-brand-700', 'border-brand-300');
+                btn.classList.add('text-slate-500');
+                showToast("Corretor Desativado");
+            }
+        }
+
+        function formatSelection(command) {
+            document.execCommand(command, false, null);
+            handleInput();
+        }
+
+        function insertEmDash() {
+            document.execCommand('insertText', false, '— ');
+            handleInput();
+        }
+
+        function insertSceneBreak() {
+            const p = document.createElement('p');
+            p.className = 'divider';
+            p.innerText = '✦';
+            
+            const p2 = document.createElement('p');
+            p2.innerHTML = '<br>'; // Empty paragraph to continue typing
+
+            const selection = window.getSelection();
+            if (selection.rangeCount) {
+                const range = selection.getRangeAt(0);
+                range.insertNode(p2);
+                range.insertNode(p);
+                range.setStart(p2, 0);
+                range.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+            handleInput();
+        }
+
+        function insertParagraph(className) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount) return;
+            let node = selection.focusNode;
+            
+            while (node && node.nodeName !== 'P' && node.nodeName !== 'DIV' && node !== document.getElementById('visualEditor')) {
+                node = node.parentNode;
+            }
+
+            if (node && node.nodeName === 'P') {
+                 if (node.className === className) {
+                     node.className = '';
+                 } else {
+                     node.className = className;
+                     if (className === 'dialogue' && !node.innerText.startsWith('—')) {
+                         node.prepend(document.createTextNode('— '));
+                     }
+                 }
+                 handleInput();
+            } else {
+                 document.execCommand('formatBlock', false, 'P');
+                 setTimeout(() => insertParagraph(className), 10);
+            }
+        }
+
+        function handleEditorKeydown(e) {
+            // Save Shortcut
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveCurrentFile();
+                return;
+            }
+
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key === 'b') { e.preventDefault(); formatSelection('bold'); }
+                else if (e.key === 'i') { e.preventDefault(); formatSelection('italic'); }
+                else if (e.key === 'f') { e.preventDefault(); openFindReplaceModal(); }
+            }
+
+            // Arrow keys mapping to pages if at edge of screen could be added here,
+            // but native browser scroll-snap handles horizontal scroll nicely on touchpads.
+        }
+
+        function switchView(mode) {
+            const visualPane = document.getElementById('visualPane');
+            const codePane = document.getElementById('codePane');
+            const btnVisual = document.getElementById('btnVisual');
+            const btnSplit = document.getElementById('btnSplit');
+
+            // Force sync before layout change
+            syncVisualToCode();
+
+            if (mode === 'visual') {
+                visualPane.classList.remove('hidden', 'w-1/2');
+                visualPane.classList.add('flex-1');
+                codePane.classList.add('hidden');
+                codePane.classList.remove('w-1/2');
+                
+                btnVisual.className = "px-3 py-1 rounded text-xs font-medium bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white transition flex items-center gap-1.5";
+                btnSplit.className = "px-3 py-1 rounded text-xs font-medium hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 text-slate-500 dark:text-slate-400";
+            } else if (mode === 'split') {
+                visualPane.classList.remove('hidden', 'flex-1');
+                visualPane.classList.add('w-1/2', 'border-r', 'border-slate-200', 'dark:border-slate-800');
+                codePane.classList.remove('hidden', 'flex-1');
+                codePane.classList.add('w-1/2');
+                
+                btnSplit.className = "px-3 py-1 rounded text-xs font-medium bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white transition flex items-center gap-1.5";
+                btnVisual.className = "px-3 py-1 rounded text-xs font-medium hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 text-slate-500 dark:text-slate-400";
+            }
+            
+            // Recalculate pagination after DOM updates sizes
+            setTimeout(updatePaginationUI, 150);
+        }
+
+        function openFindReplaceModal() {
+            const modal = document.getElementById('findReplaceModal');
+            const inner = document.getElementById('findReplaceModalInner');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                inner.classList.remove('scale-95');
+                document.getElementById('findInput').focus();
+            }, 10);
+        }
+
+        function closeFindReplaceModal() {
+            const modal = document.getElementById('findReplaceModal');
+            const inner = document.getElementById('findReplaceModalInner');
+            modal.classList.add('opacity-0');
+            inner.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        function performFindNext() {
+            const query = document.getElementById('findInput').value;
+            if (!query) return;
+            if (window.find) {
+                const found = window.find(query, false, false, true, false, true, false);
+                if (!found) showToast("Fim do documento alcançado", "info");
+            }
+        }
+
+        function performReplace() {
+            const findText = document.getElementById('findInput').value;
+            const replaceText = document.getElementById('replaceInput').value;
+            if (!findText) return;
+
+            const visualEditor = document.getElementById('visualEditor');
+            let html = visualEditor.innerHTML;
+            
+            const regex = new RegExp(findText, 'g');
+            if (regex.test(html)) {
+                visualEditor.innerHTML = html.replace(regex, replaceText);
+                handleInput();
+                showToast("Substituição concluída");
+            } else {
+                showToast("Texto não encontrado", "info");
+            }
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastMessage.innerText = message;
+            
+            if (type === 'error') {
+                toastIcon.setAttribute('data-lucide', 'alert-triangle');
+                toastIcon.className = "w-5 h-5 text-rose-400";
+            } else if (type === 'info') {
+                toastIcon.setAttribute('data-lucide', 'info');
+                toastIcon.className = "w-5 h-5 text-blue-400";
+            } else {
+                toastIcon.setAttribute('data-lucide', 'check-circle-2');
+                toastIcon.className = "w-5 h-5 text-emerald-400";
+            }
+            lucide.createIcons();
+
+            toast.classList.remove('translate-y-10', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-10', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

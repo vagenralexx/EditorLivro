@@ -1,0 +1,9 @@
+{
+  "name": "@book-editor/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./book-project": "./src/book-project.ts"
+  }
+}

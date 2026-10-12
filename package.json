@@ -1,0 +1,13 @@
+{
+  "name": "editor-de-livros-epub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Editor local-first de XHTML e EPUB com assistência editorial por IA.",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm --workspace @book-editor/desktop run tauri dev",
+    "tauri": "npm --workspace @book-editor/desktop run tauri --",
+    "build": "npm --workspace @book-editor/desktop run build",
+    "check": "npm --workspace @book-editor/desktop run build"
+  }
+}
