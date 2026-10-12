@@ -1,10 +1,10 @@
-import { join } from "@tauri-apps/api/path";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Glossary } from "../skill/skillApi";
 import { layoutGraph } from "./graphLayout";
 import { renderMarkdown } from "./markdown";
-import { kindInfo, kindOrder, splitFrontmatter, vaultCreate, vaultDelete, vaultIndex, vaultMentions, vaultRead, vaultRename, vaultTimeline, vaultWrite, type NoteKind, type NoteMentions, type NoteMeta, type TimelineEntry, type VaultIndex } from "./notebookApi";
+import { kindInfo, kindOrder, splitFrontmatter, vaultCreate, vaultDelete, vaultIndex, vaultLocation, vaultMentions, vaultRead, vaultRename, vaultTimeline, vaultWrite, type NoteKind, type NoteMentions, type NoteMeta, type RecordSummary, type TimelineEntry, type VaultIndex } from "./notebookApi";
+import { ProjectDataDialog } from "./ProjectDataDialog";
 import { RecapDialog, type AiConfig } from "./RecapDialog";
 import "../settings/AiSettingsDialog.css";
 import "./Notebook.css";
@@ -22,7 +22,8 @@ interface NotebookDialogProps {
   onChanged: () => void;
 }
 
-type Tab = "notes" | "graph" | "timeline";
+type Tab = "notes" | "records" | "graph" | "timeline";
+type StatusFilter = "todos" | "aberto" | "resolvido";
 
 export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, activeChapterLines, ai, genre, glossaryLines, glossaryData, onClose, onChanged }: NotebookDialogProps) {
   const [index, setIndex] = useState<VaultIndex | null>(null);
@@ -40,6 +41,11 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [recapOpen, setRecapOpen] = useState(false);
+  const [dataOpen, setDataOpen] = useState(false);
+  const [recordId, setRecordId] = useState("");
+  const [recordPrefix, setRecordPrefix] = useState("");
+  const [recordStatus, setRecordStatus] = useState<StatusFilter>("todos");
+  const [recordQuery, setRecordQuery] = useState("");
   const [hiddenKinds, setHiddenKinds] = useState<Set<NoteKind>>(new Set());
   const [hover, setHover] = useState("");
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -111,7 +117,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   }
 
   async function revealFolder() {
-    try { await revealItemInDir(await join(projectRoot, ".livro-notas")); } catch (reason) { setError(String(reason)); }
+    try { await revealItemInDir((await vaultLocation(projectRoot)).path); } catch (reason) { setError(String(reason)); }
   }
 
   function insertLink(title: string) {
@@ -152,6 +158,15 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   }, [index?.edges, visibleIds, visibleNotes]);
   const neighbors = useMemo(() => { const set = new Set<string>(); if (hover) { set.add(hover); for (const edge of graph.edges) { if (edge.from === hover) set.add(edge.to); if (edge.to === hover) set.add(edge.from); } } return set; }, [graph.edges, hover]);
 
+  const records = index?.records ?? [];
+  const recordIds = useMemo(() => new Set(records.map((record) => record.id)), [records]);
+  const prefixes = useMemo(() => { const counts = new Map<string, number>(); for (const record of records) counts.set(record.prefix, (counts.get(record.prefix) ?? 0) + 1); return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)); }, [records]);
+  const filteredRecords = records.filter((record) => (!recordPrefix || record.prefix === recordPrefix) && (recordStatus === "todos" || record.status === recordStatus) && (!recordQuery || `${record.id} ${record.title}`.toLowerCase().includes(recordQuery.toLowerCase())));
+  const selectedRecord: RecordSummary | undefined = records.find((record) => record.id === recordId);
+  const recordRows = (index?.recordRows ?? []).filter((row) => row.id === recordId);
+  const openRecord = useCallback((id: string) => { setRecordId(id); setRecordPrefix(""); setRecordStatus("todos"); setRecordQuery(""); setTab("records"); }, []);
+  const mdLinks = { resolve, onOpen: (path: string) => void open(path), onCreate: (target: string) => void createNote("nota", target), isRecord: (id: string) => recordIds.has(id), onRecord: openRecord };
+
   const empty = index !== null && notes.length === 0 && !creating;
   const activeChapter = chapters[activeChapterIndex];
 
@@ -160,10 +175,11 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
       <section className="notebook" role="dialog" aria-modal="true" aria-labelledby="notebook-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="notebook-header">
           <div><span className="eyebrow">MEMÓRIA ENTRE CAPÍTULOS</span><h2 id="notebook-title">Caderno do livro</h2></div>
-          <div className="notebook-tabs" role="tablist">{([["notes", "Notas"], ["graph", "Grafo"], ["timeline", "Linha do tempo"]] as [Tab, string][]).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{label}</button>)}</div>
+          <div className="notebook-tabs" role="tablist">{([["notes", "Notas"], ["records", `Registros${records.length ? ` (${records.length})` : ""}`], ["graph", "Grafo"], ["timeline", "Linha do tempo"]] as [Tab, string][]).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{label}</button>)}</div>
           <div className="notebook-actions">
             <button className="secondary-button" type="button" onClick={() => { void save(); setRecapOpen(true); }} disabled={!activeChapter}>Gerar recap do capítulo aberto</button>
             <button className="secondary-button" type="button" onClick={() => void revealFolder()} disabled={!index?.exists} title="O caderno é uma pasta de arquivos .md compatível com o Obsidian">Mostrar pasta (Obsidian)</button>
+            <button className="secondary-button" type="button" onClick={() => { void save(); setDataOpen(true); }} title="Onde os dados ficam, pasta do caderno e cópias de segurança">Dados do projeto</button>
             <button className="dialog-close" type="button" onClick={() => { void save(); onClose(); }} aria-label="Fechar caderno">×</button>
           </div>
         </header>
@@ -204,7 +220,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
               {mode === "edit" ? <div className="note-editor"><textarea ref={textRef} value={content} onChange={(event) => setContent(event.target.value)} spellCheck aria-label={`Conteúdo de ${selectedMeta.title}`} />
                 {suggestion.length > 0 && <ul className="link-suggestions" aria-label="Sugestões de link">{suggestion.map((note) => <li key={note.path}><button type="button" onMouseDown={(event) => { event.preventDefault(); insertLink(note.title); }}><span className="kind-dot" style={{ background: kindInfo[note.kind].color }} />{note.title}</button></li>)}</ul>}
                 <small className="note-help">Digite <code>[[</code> para linkar outra nota. O frontmatter (entre ---) guarda tipo, apelidos (<code>aliases</code>) e estado.</small></div>
-                : <article className="note-preview">{renderMarkdown(content, { resolve, onOpen: (path) => void open(path), onCreate: (target) => void createNote("nota", target) })}{!splitFrontmatter(content).body.trim() && <p className="notebook-hint">Nota vazia. Clique em Editar para escrever.</p>}</article>}
+                : <article className="note-preview">{renderMarkdown(content, mdLinks)}{!splitFrontmatter(content).body.trim() && <p className="notebook-hint">Nota vazia. Clique em Editar para escrever.</p>}</article>}
             </>}
           </main>
           <aside className="notebook-side">
@@ -217,6 +233,32 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
           </aside>
         </div>}
 
+        {tab === "records" && <div className="records-view">
+          <div className="records-list">
+            {records.length === 0 ? <p className="notebook-hint">Nenhum registro encontrado. Registros são linhas de tabela Markdown cuja primeira coluna é um ID estável (CF-01, FIO-03, LAC-02, PT-L1-01…), como nos seus Registro de Conflitos, Plot twists e Mapa de Fios.</p> : <>
+              <div className="records-filters">
+                <button type="button" className={recordPrefix === "" ? "active" : ""} onClick={() => setRecordPrefix("")}>Todos ({records.length})</button>
+                {prefixes.map(([prefix, count]) => <button key={prefix} type="button" className={recordPrefix === prefix ? "active" : ""} onClick={() => setRecordPrefix(prefix)}>{prefix} ({count})</button>)}
+                <select value={recordStatus} onChange={(event) => setRecordStatus(event.target.value as StatusFilter)} aria-label="Filtrar por estado"><option value="todos">Qualquer estado</option><option value="aberto">Abertos</option><option value="resolvido">Resolvidos</option></select>
+                <input type="search" placeholder="Buscar ID ou texto…" value={recordQuery} onChange={(event) => setRecordQuery(event.target.value)} aria-label="Buscar registros" />
+              </div>
+              {filteredRecords.map((record) => <button key={record.id} type="button" className={`record-item ${record.id === recordId ? "active" : ""}`} onClick={() => setRecordId(record.id)}><b>{record.id}</b><span>{record.title || "—"}</span>{record.status ? <i className={`status-badge ${record.status}`} title="Estado inferido do texto da última linha; o arquivo não é alterado">{record.status}</i> : <i />}</button>)}
+              {filteredRecords.length === 0 && <p className="muted">Nenhum registro com esses filtros.</p>}
+            </>}
+          </div>
+          <aside className="record-detail">
+            {!selectedRecord ? <p className="muted">Selecione um registro para ver todas as linhas em que ele aparece. O estado mostrado é <b>inferido</b> do texto (ex.: “resolvido”, “segue aberto”) e nunca é gravado nos seus arquivos.</p> : <>
+              <h4>{selectedRecord.id}</h4>
+              <p>{selectedRecord.status ? <i className={`status-badge ${selectedRecord.status}`}>{selectedRecord.status} (inferido)</i> : <span className="muted">estado não declarado</span>} · {selectedRecord.occurrences} linha(s)</p>
+              {recordRows.map((row, i) => <div className="row-block" key={`${row.note}:${row.line}`}>
+                <small className="muted">{i === recordRows.length - 1 && recordRows.length > 1 ? "Mais recente · " : ""}{row.note}, linha {row.line}</small>
+                <dl>{row.headers.map((header, h) => row.cells[h] ? <div key={h}><dt>{header}</dt><dd>{renderMarkdown(row.cells[h], mdLinks)}</dd></div> : null)}</dl>
+                <button type="button" className="secondary-button" onClick={() => { if (byPath.has(row.note)) void open(row.note); }} disabled={!byPath.has(row.note)}>Abrir nota</button>
+              </div>)}
+            </>}
+          </aside>
+        </div>}
+
         {!empty && tab === "graph" && <div className="graph-view">
           <div className="graph-filters">{kindOrder.map((kind) => { const count = notes.filter((note) => note.kind === kind).length; if (!count) return null; const off = hiddenKinds.has(kind); return <button key={kind} type="button" className={off ? "off" : ""} onClick={() => setHiddenKinds((current) => { const next = new Set(current); if (off) next.delete(kind); else next.add(kind); return next; })}><span className="kind-dot" style={{ background: kindInfo[kind].color }} />{kindInfo[kind].plural} ({count})</button>; })}</div>
           <svg viewBox="0 0 900 600" role="img" aria-label="Grafo de notas">
@@ -226,8 +268,9 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
           <p className="muted">{visibleNotes.length} notas · {graph.edges.length} ligações. Passe o mouse para destacar vizinhos; clique para abrir. Notas sem links ficam isoladas — ligue-as com <code>[[ ]]</code>.</p>
         </div>}
 
-        {!empty && tab === "timeline" && <div className="timeline-view">{timeline.length === 0 ? <p className="notebook-hint">A linha do tempo vem dos recaps dos capítulos. Gere o recap de um capítulo para começar.</p> : timeline.map((entry) => <section key={entry.chapter}><h4>{entry.chapter}</h4><div>{renderMarkdown(entry.events.map((event) => `- ${event}`).join("\n"), { resolve, onOpen: (path) => void open(path), onCreate: () => undefined })}</div></section>)}</div>}
+        {!empty && tab === "timeline" && <div className="timeline-view">{timeline.length === 0 ? <p className="notebook-hint">A linha do tempo vem dos recaps dos capítulos. Gere o recap de um capítulo para começar.</p> : timeline.map((entry) => <section key={entry.chapter}><h4>{entry.chapter}</h4><div>{renderMarkdown(entry.events.map((event) => `- ${event}`).join("\n"), { ...mdLinks, onCreate: () => undefined })}</div></section>)}</div>}
 
+        {dataOpen && <ProjectDataDialog projectRoot={projectRoot} onClose={() => setDataOpen(false)} onChanged={() => { setSelected(""); setContent(""); setSaved(""); setRecordId(""); void refresh(); onChanged(); }} />}
         {recapOpen && activeChapter && <RecapDialog projectRoot={projectRoot} chapterName={activeChapter.name} chapterLines={activeChapterLines} order={activeChapterIndex + 1} ai={ai} genre={genre} glossary={glossaryLines} onClose={() => setRecapOpen(false)} onSaved={() => { void refresh(); onChanged(); }} />}
       </section>
     </div>
