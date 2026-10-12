@@ -3,11 +3,12 @@ import { listen } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emptyRecord, friendlyModelName, providerFor, providerIds, providers, type ProviderId } from "../ai/providers";
 import { paragraphTextFromXhtml, textFromXhtml } from "../editor/xhtmlDocument";
 import { VisualXhtmlEditor, type PaginationState, type ReaderTheme } from "../editor/VisualXhtmlEditor";
 import type { EditorialProfileId } from "../editorial/catalog";
+import { isProjectBroken, loadProject, patchProject, toStoredPath } from "../project/projectStore";
 import { NotebookDialog } from "../notebook/NotebookDialog";
 import { vaultMemory } from "../notebook/notebookApi";
 import { FidelityCard } from "../translation/FidelityCard";
@@ -27,17 +28,15 @@ interface EditorialSuggestion { before: string; after: string; reason: string; }
 interface EditorialFinding { severity: "baixa" | "média" | "alta" | string; title: string; detail: string; anchor: string; }
 interface AnalysisResult { provider: string; model: string; summary: string; findings: EditorialFinding[]; suggestions: EditorialSuggestion[]; genesis: Genesis | null; }
 interface ProjectSettings { genre: GenreId; translationMode: boolean; adultContent: boolean; useMemory: boolean; }
-const PROJECT_SETTINGS_KEY = "book-editor.project-settings.v1";
 const defaultProjectSettings: ProjectSettings = { genre: "comercial", translationMode: false, adultContent: false, useMemory: true };
 
-function loadProjectSettings(root: string): ProjectSettings {
-  try { return { ...defaultProjectSettings, ...((JSON.parse(window.localStorage.getItem(PROJECT_SETTINGS_KEY) ?? "{}") as Record<string, Partial<ProjectSettings>>)[root] ?? {}) }; } catch { return defaultProjectSettings; }
+function settingsFromFile(file: Awaited<ReturnType<typeof loadProject>>["file"]): ProjectSettings {
+  const c = file.configuracoes ?? {};
+  return { genre: (c.genero as GenreId) ?? defaultProjectSettings.genre, translationMode: c.modoTraducao ?? false, adultContent: c.cenasAdultas ?? false, useMemory: c.usarMemoria ?? true };
 }
 
-function saveProjectSettings(root: string, settings: ProjectSettings) {
-  if (!root) return;
-  try { const all = JSON.parse(window.localStorage.getItem(PROJECT_SETTINGS_KEY) ?? "{}") as Record<string, ProjectSettings>; all[root] = settings; window.localStorage.setItem(PROJECT_SETTINGS_KEY, JSON.stringify(all)); } catch { /* opcional */ }
-}
+const settingsToFile = (s: ProjectSettings) => ({ genero: s.genre, modoTraducao: s.translationMode, cenasAdultas: s.adultContent, usarMemoria: s.useMemory });
+
 interface AiProgress { elapsedMs: number; answerChars: number; reasoningChars: number; phase: "waiting" | "thinking" | "writing"; }
 interface SaveResult { backupPath: string; }
 interface EffortOption { value: string; label: string; }
@@ -47,7 +46,6 @@ const initialModels = (): Record<ProviderId, string> => emptyRecord(() => "");
 const initialAvailableModels = (): Record<ProviderId, string[]> => emptyRecord<string[]>(() => []);
 const initialReasoningEfforts = (): Record<ProviderId, Record<string, string>> => emptyRecord<Record<string, string>>(() => ({}));
 const AI_PREFERENCES_KEY = "book-editor.ai-preferences.v1";
-const PROJECT_POSITIONS_KEY = "book-editor.project-positions.v1";
 
 interface PersistedAiPreferences {
   providerId?: ProviderId;
@@ -55,26 +53,6 @@ interface PersistedAiPreferences {
   availableModels?: Record<ProviderId, string[]>;
   validatedProviders?: Partial<Record<ProviderId, boolean>>;
   reasoningEfforts?: Record<ProviderId, Record<string, string>>;
-}
-
-interface ProjectPosition { documentPath: string; page: number; }
-
-function loadProjectPositions(): Record<string, ProjectPosition> {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(PROJECT_POSITIONS_KEY) ?? "{}") as Record<string, Partial<ProjectPosition>>;
-    return Object.fromEntries(Object.entries(parsed).flatMap(([root, position]) => {
-      const page = Number(position.page);
-      return typeof position.documentPath === "string" && position.documentPath && Number.isFinite(page) && page > 0
-        ? [[root, { documentPath: position.documentPath, page: Math.floor(page) }]] : [];
-    }));
-  } catch { return {}; }
-}
-
-function saveProjectPosition(projectRoot: string, documentPath: string, page: number) {
-  if (!projectRoot || !documentPath || page < 1) return;
-  const positions = loadProjectPositions();
-  positions[projectRoot] = { documentPath, page };
-  window.localStorage.setItem(PROJECT_POSITIONS_KEY, JSON.stringify(positions));
 }
 
 function loadAiPreferences(): PersistedAiPreferences {
@@ -161,6 +139,7 @@ export function WorkspaceDashboard() {
   const [pagination, setPagination] = useState<PaginationState>({ page: 1, pageCount: 1, xhtml: "" });
   const [resumePage, setResumePage] = useState(1);
   const [externalEditorRevision, setExternalEditorRevision] = useState(0);
+  const positionTimer = useRef<number | undefined>(undefined);
   const [pendingDocument, setPendingDocument] = useState<ProjectDocument | null>(null);
 
   useEffect(() => { invoke<AppBootstrap>("get_app_bootstrap").then(setBootstrap).catch(() => setBootstrap(null)); }, []);
@@ -219,7 +198,17 @@ export function WorkspaceDashboard() {
   const profile = useMemo(() => catalog?.profiles.find((item) => item.id === profileId) ?? catalog?.profiles[0] ?? null, [catalog, profileId]);
   const genreLabel = useMemo(() => catalog?.genres.find((item) => item.id === projectSettings.genre)?.label ?? "Ficção comercial", [catalog, projectSettings.genre]);
   useEffect(() => { getSkillCatalog().then(setCatalog).catch(() => setCatalog(null)); }, []);
-  useEffect(() => { saveProjectSettings(projectRoot, projectSettings); }, [projectRoot, projectSettings]);
+  // Configurações do projeto vivem em .livro/projeto.json. Só gravamos depois de carregar o arquivo
+  // do projeto aberto e quando algo realmente mudou (evita sobrescrever com os padrões ao abrir).
+  const settingsReady = useRef("");
+  const lastSettings = useRef("");
+  useEffect(() => {
+    if (!projectRoot || settingsReady.current !== projectRoot) return;
+    const serialized = JSON.stringify(settingsToFile(projectSettings));
+    if (serialized === lastSettings.current) return;
+    lastSettings.current = serialized;
+    void patchProject(projectRoot, "configuracoes", settingsToFile(projectSettings)).catch(() => undefined);
+  }, [projectRoot, projectSettings]);
   const changeProfile = useCallback((id: EditorialProfileId) => {
     setProfileId(id);
     const next = catalog?.profiles.find((item) => item.id === id);
@@ -296,12 +285,17 @@ export function WorkspaceDashboard() {
         return;
       }
       setDocuments(files);
-      const savedPosition = loadProjectPositions()[selected];
-      const savedDocument = files.find((file) => file.path === savedPosition?.documentPath);
+      const project = await loadProject(selected, { fresh: true });
+      if (project.error) await message(`${project.error}\n\nO projeto abre com os padrões e as configurações não serão gravadas até o arquivo ser corrigido.`, { title: "Arquivo do projeto ilegível", kind: "warning" });
+      const stored = project.file.leitura;
+      const savedDocument = stored ? files.find((file) => toStoredPath(selected, file.path).toLowerCase() === stored.documento.toLowerCase()) : undefined;
+      const loadedSettings = settingsFromFile(project.file);
+      settingsReady.current = ""; lastSettings.current = JSON.stringify(settingsToFile(loadedSettings));
       setProjectRoot(selected);
-      setProjectSettings(loadProjectSettings(selected));
+      setProjectSettings(loadedSettings);
+      settingsReady.current = selected;
       glossaryLoad(selected).then((state) => { setGlossary(glossaryToLines(state.glossary)); setGlossaryData(state.glossary); }).catch(() => { setGlossary([]); setGlossaryData(null); });
-      await loadDocument(savedDocument ?? files[0], savedDocument ? savedPosition?.page : 1);
+      await loadDocument(savedDocument ?? files[0], savedDocument ? stored?.pagina : 1);
     } catch (error) {
       await message(String(error), { title: "Não foi possível abrir o projeto", kind: "error" });
     } finally {
@@ -400,7 +394,12 @@ export function WorkspaceDashboard() {
   const updatePagination = useCallback((next: PaginationState) => {
     setPagination((current) => current.page === next.page && current.pageCount === next.pageCount && current.xhtml === next.xhtml ? current : next);
     setResumePage(next.page);
-    if (activeDocument) saveProjectPosition(projectRoot, activeDocument.path, next.page);
+    if (activeDocument && projectRoot && !isProjectBroken(projectRoot)) {
+      // A posição muda a cada página virada: gravamos só depois de 700 ms de calma.
+      const target = { documento: toStoredPath(projectRoot, activeDocument.path), pagina: next.page };
+      if (positionTimer.current) window.clearTimeout(positionTimer.current);
+      positionTimer.current = window.setTimeout(() => { void patchProject(projectRoot, "leitura", target).catch(() => undefined); }, 700);
+    }
   }, [activeDocument, projectRoot]);
 
   return (

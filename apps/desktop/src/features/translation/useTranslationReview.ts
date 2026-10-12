@@ -2,14 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { compareTranslation, emptyGlossary, originalLoad, type ChapterText, type FidelityReport, type Glossary } from "../skill/skillApi";
 
-const STORAGE_KEY = "book-editor.original-source.v1";
-
-function storedSource(root: string): string {
-  try { return (JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as Record<string, string>)[root] ?? ""; } catch { return ""; }
-}
-function rememberSource(root: string, path: string) {
-  try { const all = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as Record<string, string>; if (path) all[root] = path; else delete all[root]; window.localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); } catch { /* opcional */ }
-}
+import { fromStoredPath, loadProject, patchProject, toStoredPath } from "../project/projectStore";
 
 const stem = (name: string) => name.replace(/\.[^.]+$/u, "").toLowerCase();
 
@@ -43,15 +36,20 @@ export function useTranslationReview({ enabled, projectRoot, activeName, activeI
     setLoading(true); setError("");
     try {
       const loaded = await originalLoad(path);
-      setChapters(loaded); setSourcePath(path); setManualIndex(null); rememberSource(projectRoot, path);
+      setChapters(loaded); setSourcePath(path); setManualIndex(null); void patchProject(projectRoot, "original", { caminho: toStoredPath(projectRoot, path) }).catch(() => undefined);
     } catch (reason) { setError(String(reason)); } finally { setLoading(false); }
   }, [projectRoot]);
 
   // Reabre o original usado da última vez neste projeto.
   useEffect(() => {
     setChapters([]); setSourcePath(""); setReport(null); setError("");
-    const saved = projectRoot ? storedSource(projectRoot) : "";
-    if (enabled && saved) void load(saved);
+    if (!enabled || !projectRoot) return;
+    let active = true;
+    loadProject(projectRoot).then(async (project) => {
+      const stored = project.file.original?.caminho;
+      if (stored && active) void load(await fromStoredPath(projectRoot, stored));
+    }).catch(() => undefined);
+    return () => { active = false; };
   }, [projectRoot, enabled, load]);
 
   const choose = useCallback(async (kind: "epub" | "folder") => {
@@ -61,7 +59,7 @@ export function useTranslationReview({ enabled, projectRoot, activeName, activeI
     if (typeof selected === "string") await load(selected);
   }, [load]);
 
-  const clear = useCallback(() => { setChapters([]); setSourcePath(""); setReport(null); rememberSource(projectRoot, ""); }, [projectRoot]);
+  const clear = useCallback(() => { setChapters([]); setSourcePath(""); setReport(null); void patchProject(projectRoot, "original", null).catch(() => undefined); }, [projectRoot]);
 
   // Capítulo do original: mesmo nome (sem extensão) ou, na falta, mesma posição na lista.
   const autoIndex = useMemo(() => {

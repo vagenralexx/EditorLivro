@@ -2,6 +2,7 @@ import { dirname, join } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fromStoredPath, loadProject, patchProject, toStoredPath } from "../project/projectStore";
 import { copiesList, copiesRegister, detectWatermark, emptyEpubMetadata, epubBuild, epubInspect, epubValidate, type CopyRecord, type EpubBuildRequest, type EpubMetadata, type EpubProjectInfo, type EpubReport } from "./epubApi";
 import "../settings/AiSettingsDialog.css";
 import "./ExportEpubDialog.css";
@@ -14,21 +15,7 @@ interface ExportEpubDialogProps {
   onClose: () => void;
 }
 
-const STORAGE_KEY = "book-editor.epub-export.v1";
-
 interface StoredExport { metadata: Partial<EpubMetadata>; cover: string; }
-
-function loadStored(root: string): StoredExport | null {
-  try { return (JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as Record<string, StoredExport>)[root] ?? null; } catch { return null; }
-}
-
-function storeFor(root: string, value: StoredExport) {
-  try {
-    const all = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as Record<string, StoredExport>;
-    all[root] = value;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-  } catch { /* preferências são opcionais */ }
-}
 
 const parseAuthors = (text: string) => text.split(/[;\n]/u).map((name) => name.trim()).filter(Boolean);
 const safeFileName = (title: string) => (title.trim() || "livro").replace(/[\\/:*?"<>|]+/gu, " ").replace(/\s+/gu, " ").trim();
@@ -62,9 +49,11 @@ export function ExportEpubDialog({ projectRoot, chapterPaths, hasUnsavedChanges,
 
   useEffect(() => {
     let active = true;
-    epubInspect(projectRoot).then((found) => {
+    Promise.all([epubInspect(projectRoot), loadProject(projectRoot)]).then(async ([found, project]) => {
       if (!active) return;
-      const stored = loadStored(projectRoot);
+      const saved = project.file.epub;
+      const stored: StoredExport | null = saved ? { metadata: (saved.metadados ?? {}) as Partial<EpubMetadata>, cover: saved.capa ? await fromStoredPath(projectRoot, saved.capa) : "" } : null;
+      if (!active) return;
       const base = { ...emptyEpubMetadata, ...found.metadata, language: found.metadata.language || "pt-BR" };
       detected.current = base;
       const merged = found.mode === "loose" ? { ...base, ...stored?.metadata } : base;
@@ -99,7 +88,7 @@ export function ExportEpubDialog({ projectRoot, chapterPaths, hasUnsavedChanges,
       if (response.outcome) {
         setReport(response.outcome.report);
         setResult({ path: response.outcome.path, size: response.outcome.sizeBytes });
-        storeFor(projectRoot, { metadata: { ...form, authors: parseAuthors(authorsText), identifier: response.outcome.identifier }, cover });
+        void patchProject(projectRoot, "epub", { metadados: { ...form, authors: parseAuthors(authorsText), identifier: response.outcome.identifier }, capa: cover ? toStoredPath(projectRoot, cover) : "" }).catch(() => undefined);
         const mark = response.outcome.watermark;
         if (mark) setCopies(await copiesRegister(projectRoot, { token: mark.token, recipient: mark.recipient, title: form.title || "livro", createdAt: "", file: fileName(response.outcome.path) }));
         setForm((current) => ({ ...current, identifier: response.outcome?.identifier ?? current.identifier }));
