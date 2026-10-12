@@ -1,7 +1,7 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Glossary } from "../skill/skillApi";
-import { layoutGraph } from "./graphLayout";
+import { GraphView } from "./GraphView";
 import { renderMarkdown } from "./markdown";
 import { kindInfo, kindOrder, splitFrontmatter, vaultCreate, vaultDelete, vaultIndex, vaultLocation, vaultMentions, vaultRead, vaultRename, vaultTimeline, vaultWrite, type NoteKind, type NoteMentions, type NoteMeta, type RecordSummary, type TimelineEntry, type VaultIndex } from "./notebookApi";
 import { BibleDialog } from "./BibleDialog";
@@ -52,8 +52,6 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   const [recordPrefix, setRecordPrefix] = useState("");
   const [recordStatus, setRecordStatus] = useState<StatusFilter>("todos");
   const [recordQuery, setRecordQuery] = useState("");
-  const [hiddenKinds, setHiddenKinds] = useState<Set<NoteKind>>(new Set());
-  const [hover, setHover] = useState("");
   const [userOpen, setUserOpen] = useState<Partial<Record<NoteKind, boolean>>>({});
   const [recordGroup, setRecordGroup] = useState<"ids" | "nomes">("ids");
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -161,18 +159,6 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   const broken = (index?.unresolved ?? []).filter((item) => item.from === selected);
   const myMentions = mentions.find((item) => item.path === selected);
   const filtered = notes.filter((note) => !query || `${note.title} ${note.heading ?? ""} ${note.aliases.join(" ")}`.toLowerCase().includes(query.toLowerCase()));
-
-  // Grafo: nós = notas visíveis; arestas = links entre elas.
-  const visibleNotes = notes.filter((note) => !hiddenKinds.has(note.kind));
-  const visibleIds = useMemo(() => new Set(visibleNotes.map((note) => note.path)), [visibleNotes]);
-  const graph = useMemo(() => {
-    const edges = (index?.edges ?? []).filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to));
-    const degree = new Map<string, number>();
-    for (const edge of edges) { degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1); degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1); }
-    const positioned = layoutGraph(visibleNotes.map((note) => ({ id: note.path, weight: degree.get(note.path) ?? 0 })), edges);
-    return { edges, degree, positions: new Map(positioned.map((p) => [p.id, p])) };
-  }, [index?.edges, visibleIds, visibleNotes]);
-  const neighbors = useMemo(() => { const set = new Set<string>(); if (hover) { set.add(hover); for (const edge of graph.edges) { if (edge.from === hover) set.add(edge.to); if (edge.to === hover) set.add(edge.from); } } return set; }, [graph.edges, hover]);
 
   const allRecords = index?.records ?? [];
   const idRecords = allRecords.filter((record) => !record.keyed);
@@ -288,14 +274,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
           </aside>
         </div>}
 
-        {!empty && tab === "graph" && <div className="graph-view">
-          <div className="graph-filters">{kindOrder.map((kind) => { const count = notes.filter((note) => note.kind === kind).length; if (!count) return null; const off = hiddenKinds.has(kind); return <button key={kind} type="button" className={off ? "off" : ""} onClick={() => setHiddenKinds((current) => { const next = new Set(current); if (off) next.delete(kind); else next.add(kind); return next; })}><span className="kind-dot" style={{ background: kindInfo[kind].color }} />{kindInfo[kind].plural} ({count})</button>; })}</div>
-          <svg viewBox="0 0 900 600" role="group" aria-label="Grafo de notas">
-            {graph.edges.map((edge) => { const a = graph.positions.get(edge.from); const b = graph.positions.get(edge.to); if (!a || !b) return null; const lit = !hover || (neighbors.has(edge.from) && neighbors.has(edge.to)); return <line key={`${edge.from}>${edge.to}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={lit ? "edge" : "edge dim"} />; })}
-            {visibleNotes.map((note) => { const p = graph.positions.get(note.path); if (!p) return null; const r = 6 + Math.min(graph.degree.get(note.path) ?? 0, 10) * 1.4; const lit = !hover || neighbors.has(note.path); return <g key={note.path} className={`node ${lit ? "" : "dim"} ${note.path === selected ? "selected" : ""}`} transform={`translate(${p.x},${p.y})`} onMouseEnter={() => setHover(note.path)} onMouseLeave={() => setHover("")} onClick={() => void open(note.path)} tabIndex={0} role="button" aria-label={note.title} onKeyDown={(event) => { if (event.key === "Enter") void open(note.path); }}><circle r={r} fill={kindInfo[note.kind].color} /><text y={r + 12} textAnchor="middle">{note.title.length > 22 ? `${note.title.slice(0, 21)}…` : note.title}</text></g>; })}
-          </svg>
-          <p className="muted">{visibleNotes.length} notas · {graph.edges.length} ligações. Passe o mouse para destacar vizinhos; clique para abrir. Notas sem links ficam isoladas — ligue-as com <code>[[ ]]</code>.</p>
-        </div>}
+        {!empty && tab === "graph" && <GraphView notes={notes} edges={index?.edges ?? []} selected={selected} onOpen={(path) => void open(path)} />}
 
         {!empty && tab === "timeline" && <div className="timeline-view">{timeline.length === 0 ? <p className="notebook-hint">A linha do tempo vem dos recaps dos capítulos. Gere o recap de um capítulo para começar.</p> : timeline.map((entry) => <section key={entry.chapter}><h3>{entry.chapter}</h3><div>{renderMarkdown(entry.events.map((event) => `- ${event}`).join("\n"), { ...mdLinks, onCreate: () => undefined })}</div></section>)}</div>}
 

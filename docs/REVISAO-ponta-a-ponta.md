@@ -142,6 +142,15 @@ Achados do teste real e correções:
 - **Tema escuro de ponta a ponta:** diálogos (configurações, exportar, glossário, substituir, dados do projeto), painel de referências, Caderno e Bíblia agora seguem o tema (antes eram claros no meio de um app escuro, e a seleção da Bíblia ficava ilegível). axe-core: 0 violações em claro e escuro.
 - **Foco do teclado:** o ciclo do Tab dentro dos diálogos é feito à mão (o Chrome inclui áreas roláveis e `<summary>` na ordem e o foco escapava).
 
+## Grafo travado (round 11)
+
+Causas medidas com 136 notas / 1005 ligações:
+
+1. **O layout era recalculado a cada movimento do mouse** (a lista de nós visíveis era recriada a cada render e invalidava o cache): ~220 iterações O(n²) por hover.
+2. **`backdrop-filter: blur()` no fundo dos diálogos** forçava o navegador a re-borrar a tela inteira a cada repaint: hover 47 ms → **16,7 ms (60 fps)** só ao removê-lo. Vale para todos os diálogos (digitar, rolar, animar).
+
+Mudanças: layout com **d3-force** (repulsão por quadtree, mola, colisão por raio; roda uma vez, determinístico) em vez de Fruchterman–Reingold artesanal; todas as ligações em um único `<path>`; destaque do mouse feito por classes direto no DOM (sem re-render); rótulos só dos 16 nós mais ligados + vizinhos + nota aberta (todos ao aproximar); **zoom (roda) e arrasto**; modo **Vizinhança da nota aberta** (até 2 ligações), que é o que de fato se lê num vault de 136 notas. Dependência nova: `d3-force` (+ tipos).
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.

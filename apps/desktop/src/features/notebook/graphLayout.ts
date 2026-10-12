@@ -1,50 +1,58 @@
+import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
+
 export interface GraphNode { id: string; weight: number; }
 export interface GraphEdge { from: string; to: string; }
 export interface Positioned { id: string; x: number; y: number; }
 
-/** Layout de forças (Fruchterman–Reingold) determinístico, em um quadro `width × height`. */
-export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], width = 900, height = 600, iterations = 220): Positioned[] {
-  const n = nodes.length;
-  if (!n) return [];
-  const index = new Map(nodes.map((node, i) => [node.id, i]));
-  // Posição inicial em círculo (determinística: o mesmo caderno gera o mesmo desenho).
-  const px = nodes.map((_, i) => width / 2 + Math.cos((2 * Math.PI * i) / n) * Math.min(width, height) * 0.35);
-  const py = nodes.map((_, i) => height / 2 + Math.sin((2 * Math.PI * i) / n) * Math.min(width, height) * 0.35);
-  const area = width * height;
-  const k = Math.sqrt(area / Math.max(n, 1)) * 0.8;
-  const links = edges.map((edge) => [index.get(edge.from), index.get(edge.to)] as const).filter((pair): pair is readonly [number, number] => pair[0] !== undefined && pair[1] !== undefined);
-  let temperature = Math.min(width, height) / 8;
-  for (let step = 0; step < iterations; step += 1) {
-    const dx = new Array<number>(n).fill(0);
-    const dy = new Array<number>(n).fill(0);
-    for (let a = 0; a < n; a += 1) {
-      for (let b = a + 1; b < n; b += 1) {
-        let vx = px[a] - px[b];
-        let vy = py[a] - py[b];
-        let distance = Math.hypot(vx, vy);
-        if (distance < 0.01) { vx = (a % 7) - 3 + 0.1; vy = (b % 5) - 2 + 0.1; distance = Math.hypot(vx, vy); }
-        const force = (k * k) / distance;
-        dx[a] += (vx / distance) * force; dy[a] += (vy / distance) * force;
-        dx[b] -= (vx / distance) * force; dy[b] -= (vy / distance) * force;
-      }
-    }
-    for (const [a, b] of links) {
-      const vx = px[a] - px[b];
-      const vy = py[a] - py[b];
-      const distance = Math.max(Math.hypot(vx, vy), 0.01);
-      const force = (distance * distance) / k;
-      dx[a] -= (vx / distance) * force; dy[a] -= (vy / distance) * force;
-      dx[b] += (vx / distance) * force; dy[b] += (vy / distance) * force;
-    }
-    for (let i = 0; i < n; i += 1) {
-      // Gravidade leve ao centro evita que componentes soltos fujam do quadro.
-      dx[i] += (width / 2 - px[i]) * 0.02; dy[i] += (height / 2 - py[i]) * 0.02;
-      const length = Math.max(Math.hypot(dx[i], dy[i]), 0.01);
-      const move = Math.min(length, temperature);
-      px[i] = Math.min(width - 30, Math.max(30, px[i] + (dx[i] / length) * move));
-      py[i] = Math.min(height - 30, Math.max(30, py[i] + (dy[i] / length) * move));
-    }
-    temperature *= 0.985;
+type SimNode = SimulationNodeDatum & { id: string; weight: number };
+
+/** Raio do nó em função do grau (também usado para evitar sobreposição). */
+export const nodeRadius = (degree: number) => 4 + Math.sqrt(Math.max(degree, 0)) * 1.7;
+
+/**
+ * Layout de forças com d3-force (repulsão por quadtree, mola nas ligações, colisão por raio e
+ * gravidade leve para componentes soltos). Roda de forma síncrona e determinística (a posição
+ * inicial do d3 é uma espiral fixa), depois ajusta o desenho ao quadro `width × height`.
+ */
+export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], width = 900, height = 600): Positioned[] {
+  if (!nodes.length) return [];
+  const simNodes: SimNode[] = nodes.map((node) => ({ id: node.id, weight: node.weight }));
+  const known = new Set(simNodes.map((node) => node.id));
+  const links: SimulationLinkDatum<SimNode>[] = edges.filter((edge) => known.has(edge.from) && known.has(edge.to)).map((edge) => ({ source: edge.from, target: edge.to }));
+  const simulation = forceSimulation<SimNode>(simNodes)
+    .force("link", forceLink<SimNode, SimulationLinkDatum<SimNode>>(links).id((node) => node.id).distance(42).strength(0.35))
+    .force("charge", forceManyBody<SimNode>().strength(-70).distanceMax(320))
+    .force("collide", forceCollide<SimNode>((node) => nodeRadius(node.weight) + 3))
+    .force("center", forceCenter(0, 0))
+    .force("x", forceX<SimNode>(0).strength(0.05))
+    .force("y", forceY<SimNode>(0).strength(0.05))
+    .stop();
+  const ticks = Math.min(400, 120 + Math.ceil(simNodes.length / 2));
+  for (let i = 0; i < ticks; i += 1) simulation.tick();
+
+  // Ajusta o desenho ao quadro, com margem para os rótulos.
+  const margin = 40;
+  const xs = simNodes.map((node) => node.x ?? 0);
+  const ys = simNodes.map((node) => node.y ?? 0);
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const scale = Math.min((width - margin * 2) / Math.max(maxX - minX, 1), (height - margin * 2) / Math.max(maxY - minY, 1), 3);
+  const [cx, cy] = [(minX + maxX) / 2, (minY + maxY) / 2];
+  return simNodes.map((node) => ({ id: node.id, x: width / 2 + ((node.x ?? 0) - cx) * scale, y: height / 2 + ((node.y ?? 0) - cy) * scale }));
+}
+
+/** Vizinhança até `depth` saltos ao redor de `start` (ligações nos dois sentidos). */
+export function neighborhood(start: string, edges: GraphEdge[], depth: number): Set<string> {
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edges) {
+    (adjacency.get(edge.from) ?? adjacency.set(edge.from, []).get(edge.from)!).push(edge.to);
+    (adjacency.get(edge.to) ?? adjacency.set(edge.to, []).get(edge.to)!).push(edge.from);
   }
-  return nodes.map((node, i) => ({ id: node.id, x: px[i], y: py[i] }));
+  const seen = new Set([start]);
+  let frontier = [start];
+  for (let level = 0; level < depth; level += 1) {
+    const next: string[] = [];
+    for (const id of frontier) for (const other of adjacency.get(id) ?? []) if (!seen.has(other)) { seen.add(other); next.push(other); }
+    frontier = next;
+  }
+  return seen;
 }

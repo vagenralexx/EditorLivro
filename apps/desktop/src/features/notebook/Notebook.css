@@ -210,3 +210,32 @@
 .app-night .notebook .settings-feedback.error { color: #ffb4be; background: #3a1d25; }
 .app-night .notebook .records-filters button { color: #d3dfeb; background: #1b2a3a; border-color: #3b5063; }
 .app-night .notebook .records-filters button.active { color: #0b1620; background: #7bd7e6; border-color: #7bd7e6; }
+
+/* Grafo (d3-force): ligações em dois <path>, zoom e arrasto */
+.graph-view svg { cursor: grab; touch-action: none; user-select: none; }
+.graph-view svg.dragging { cursor: grabbing; }
+.graph-view .edges { fill: none; stroke: #8fa3ba; stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .45; }
+.graph-view .edges.dim { opacity: .1; }
+.graph-view .edges.lit { stroke: #117b91; stroke-width: 2; opacity: .95; }
+.graph-view .node circle { stroke-width: 1.5; }
+.graph-view .node:focus-visible circle { stroke: #117b91; stroke-width: 3; }
+.graph-view .node text { paint-order: stroke; stroke: #f9fbfd; stroke-width: 3px; stroke-linejoin: round; }
+.graph-mode { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: #e8eef5; }
+.graph-mode button { border: 0 !important; background: none !important; font-weight: 700; }
+.graph-mode button.active { color: #0a6d83 !important; background: #fff !important; box-shadow: 0 1px 3px rgba(19, 33, 56, .14); }
+.graph-mode button:disabled { opacity: .45; cursor: not-allowed; }
+.graph-reset { margin-left: auto; }
+.app-night .graph-view .node text { stroke: #182534; }
+.app-night .graph-view .edges { stroke: #6f87a0; }
+.app-night .graph-view .edges.lit { stroke: #7bd7e6; }
+.app-night .graph-mode { background: #182534; }
+.app-night .graph-mode button { color: #d3dfeb !important; }
+.app-night .graph-mode button.active { color: #7bd7e6 !important; background: #223a4e !important; box-shadow: none; }
+
+/* Destaque do mouse por classes (aplicadas direto no DOM) e rótulos controlados por CSS */
+.graph-view .node text { display: none; font-size: var(--label-size, 11px); }
+.graph-view .node.top text, .graph-view .node.sel text, .graph-view .node.hov text, .graph-view .node.nb text, .graph-view svg.zoomed .node text { display: block; }
+.graph-view svg.hovering .node:not(.hov):not(.nb) { opacity: .18; }
+.graph-view svg.hovering .edges.base { opacity: .07; }
+.graph-view .node.sel circle { stroke: #20304a; stroke-width: 3; }
+.app-night .graph-view .node.sel circle { stroke: #fff; }
