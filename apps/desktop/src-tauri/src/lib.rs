@@ -661,6 +661,16 @@ fn recent_projects(app: tauri::AppHandle) -> Result<Vec<recent::Recent>, String>
 #[tauri::command]
 fn recent_projects_touch(app: tauri::AppHandle, path: String) -> Result<Vec<recent::Recent>, String> { recent::touch(&app_data(&app)?, &path) }
 
+/// O acesso do webview a uma pasta escolhida no diálogo vale só até fechar o app. Para "Abrir último
+/// trabalho" ele é reaberto, mas apenas para pastas que já estão na lista de recentes.
+#[tauri::command]
+fn recent_projects_allow(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_fs::FsExt;
+    if !recent::contains(&app_data(&app)?, &path) { return Err("Esta pasta não está na lista de trabalhos recentes. Use “Abrir projeto”.".into()); }
+    if !std::path::Path::new(&path).is_dir() { return Err(format!("A pasta não foi encontrada: {path}")); }
+    app.fs_scope().allow_directory(&path, true).map_err(|e| e.to_string())
+}
+
 // ---- Substituir palavras no livro (renomear personagem etc.) ----
 
 #[tauri::command]
@@ -809,7 +819,7 @@ fn project_state_patch(root: String, section: String, value: serde_json::Value) 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_references, vault_entity, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch, bible_catalog, bible_list, bible_create, bible_read, bible_write_section, bible_ai_draft, chapters_text, replace_preview, replace_apply, replace_history, replace_undo, recent_projects, recent_projects_touch])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_references, vault_entity, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch, bible_catalog, bible_list, bible_create, bible_read, bible_write_section, bible_ai_draft, chapters_text, replace_preview, replace_apply, replace_history, replace_undo, recent_projects, recent_projects_touch, recent_projects_allow])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 

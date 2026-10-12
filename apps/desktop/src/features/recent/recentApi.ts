@@ -14,6 +14,8 @@ export interface RecentProject {
 export const recentProjects = () => invoke<RecentProject[]>("recent_projects");
 export const touchRecentProject = (path: string) => invoke<RecentProject[]>("recent_projects_touch", { path });
 
+export const allowRecentProject = (path: string) => invoke<void>("recent_projects_allow", { path });
+
 /** "capitulo3.xhtml · página 12" para a dica do botão. */
 export function resumeLabel(project: RecentProject): string {
   const doc = project.document?.split("/").pop();

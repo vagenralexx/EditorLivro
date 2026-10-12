@@ -178,6 +178,12 @@ Problema: o painel direito misturava modelo, perfil, opções, análise, resulta
 - Reticências finais removidas dos rótulos de botões (ações que abrem diálogo não precisam de "…").
 - Verificação: axe-core 0 violações (claro e escuro, painel, popover, abas, opções e todos os diálogos), teclado (foco entra/volta, Esc), 1080 e 1366 px. **Só foi testado no navegador com comandos Tauri simulados**, não no app Windows.
 
+### Correções após o primeiro teste real do round 14
+
+- **Painel direito estourando a largura:** o `<select>` de perfil (nome longo) alargava a coluna e criava rolagem horizontal. Colunas das caixas agora são `minmax(0, 1fr)`, selects com `width: 100%` e reticências, e o painel não rola na horizontal. Reproduzido antes e medido depois (largura do conteúdo = largura do painel, 1080 e 1280 px).
+- **"Abrir último trabalho" dava `forbidden path … allow-read-dir`:** o webview só ganha acesso de leitura à pasta que o diálogo "Abrir projeto" escolheu, e isso vale até fechar o app. Novo comando `recent_projects_allow` reabre o acesso **somente** para pastas que estão na lista de recentes (e que existem).
+- **Sugestão "não foi localizada no XHTML":** a IA devolve o trecho como texto corrido, mas a busca era feita no XHTML cru, então falhava com `<em>`, entidades (`&amp;`, `&#8217;`) e trechos que cruzam parágrafos (ex.: título duplicado). `applyTextSuggestion` (`editor/applySuggestion.ts`) busca no texto visível, troca só os nós de texto, apaga os elementos que ficarem vazios e escapa o texto novo. Aspas curvas e retas são equivalentes na busca. Se o trecho realmente não existe, aparece um aviso na aba Sugestões (antes aparecia como "Não foi possível analisar", por engano).
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.

@@ -102,3 +102,11 @@
 .results-panel .suggestion-card small { color: #55657c; }
 .app-night .results-panel :is(.scan-muted, .scan-panel small, .scan-panel p) { color: #aebdd0; }
 .app-night .results-panel .suggestion-card small { color: #d3dfeb; }
+
+/* Nada pode alargar a coluna: nomes longos de perfil/modelo cortam com reticências ou quebram linha. */
+.ai-panel.assistant { overflow-x: hidden; }
+.ai-panel.assistant > * { min-width: 0; }
+.assistant-card, .assistant-options-body, .ai-popover { grid-template-columns: minmax(0, 1fr); }
+.assistant-card > *, .assistant-options-body > *, .ai-popover > * { min-width: 0; }
+.assistant-field select, .assistant-card select, .assistant-options select { width: 100%; max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+.assistant-help, .assistant-blocker, .assistant-privacy { overflow-wrap: anywhere; }

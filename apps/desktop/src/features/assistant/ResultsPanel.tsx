@@ -13,6 +13,8 @@ interface ResultsPanelProps {
   error: string;
   findings: ResultFinding[];
   suggestions: ResultSuggestion[];
+  /** Aviso quando uma sugestão não pôde ser aplicada (não é erro da análise). */
+  notice: string;
   onApply: (suggestion: ResultSuggestion) => void;
   /** Nota de memória, Genesis Score e comparação com o original (aparecem em "Resultado"). */
   extra: ReactNode;
@@ -25,7 +27,7 @@ const WIDTH = 440;
  * Painel flutuante com o resultado da análise: pode ser arrastado pelo cabeçalho, redimensionado
  * pelo canto e recolhido, para não tapar o texto que está sendo revisado.
  */
-export function ResultsPanel({ tab, onTab, onClose, summary, error, findings, suggestions, onApply, extra, diagnostics }: ResultsPanelProps) {
+export function ResultsPanel({ tab, onTab, onClose, summary, error, findings, suggestions, notice, onApply, extra, diagnostics }: ResultsPanelProps) {
   const [position, setPosition] = useState(() => ({ left: Math.max(12, window.innerWidth - 340 - WIDTH - 20), top: 78 }));
   const [collapsed, setCollapsed] = useState(false);
   const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
@@ -70,6 +72,7 @@ export function ResultsPanel({ tab, onTab, onClose, summary, error, findings, su
             {findings.map((finding, index) => <article className="finding-card" key={`${finding.title}-${index}`}><header><strong>{finding.title}</strong><span className={`severity ${finding.severity.toLocaleLowerCase("pt-BR")}`}>{finding.severity}</span></header><p>{finding.detail}</p>{finding.anchor && <blockquote><strong>Trecho:</strong> “{finding.anchor}”</blockquote>}</article>)}
             {extra}
           </>)}
+          {tab === "sugestoes" && notice && <p className="analysis-result error" role="alert">{notice}</p>}
           {tab === "sugestoes" && (suggestions.length === 0 ? <p className="assistant-help">Nenhuma sugestão aplicável. Rode uma análise com perfil de revisão para receber trechos ANTES/DEPOIS.</p> : suggestions.map((suggestion, index) => (
             <article className="suggestion-card" key={`${suggestion.before}-${index}`}>
               <div><strong>Antes</strong><del>{suggestion.before}</del></div>

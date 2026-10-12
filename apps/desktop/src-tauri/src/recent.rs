@@ -56,6 +56,9 @@ fn describe(item: &Stored) -> Recent {
 
 pub fn list(dir: &Path) -> Vec<Recent> { read_stored(dir).iter().map(describe).collect() }
 
+/// A pasta está na lista de recentes? (só essas têm o acesso de leitura reaberto.)
+pub fn contains(dir: &Path, project: &str) -> bool { read_stored(dir).iter().any(|item| same(&item.path, project)) }
+
 /// Move (ou acrescenta) o projeto para o topo da lista.
 pub fn touch(dir: &Path, project: &str) -> Result<Vec<Recent>, String> {
     let mut items = read_stored(dir);

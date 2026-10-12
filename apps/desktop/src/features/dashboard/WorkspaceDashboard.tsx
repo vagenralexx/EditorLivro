@@ -6,13 +6,14 @@ import { message, open } from "@tauri-apps/plugin-dialog";
 import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { emptyRecord, friendlyModelName, providerFor, providerIds, providers, type ProviderId } from "../ai/providers";
+import { applyTextSuggestion } from "../editor/applySuggestion";
 import { paragraphTextFromXhtml, textFromXhtml } from "../editor/xhtmlDocument";
 import { VisualXhtmlEditor, type PaginationState, type ReaderTheme } from "../editor/VisualXhtmlEditor";
 import type { EditorialProfileId } from "../editorial/catalog";
 import { isProjectBroken, loadProject, patchProject, toStoredPath } from "../project/projectStore";
 import { useDialogA11y } from "../../shared/useDialogA11y";
 import { BibleDialog } from "../notebook/BibleDialog";
-import { recentProjects, resumeLabel, touchRecentProject, type RecentProject } from "../recent/recentApi";
+import { allowRecentProject, recentProjects, resumeLabel, touchRecentProject, type RecentProject } from "../recent/recentApi";
 import { AssistantPanel } from "../assistant/AssistantPanel";
 import { ResultsPanel, type ResultsTab } from "../assistant/ResultsPanel";
 import { ReferencesPanel } from "../references/ReferencesPanel";
@@ -151,6 +152,7 @@ export function WorkspaceDashboard() {
   const [analysis, setAnalysis] = useState("");
   const [findings, setFindings] = useState<EditorialFinding[]>([]);
   const [suggestions, setSuggestions] = useState<EditorialSuggestion[]>([]);
+  const [suggestionNotice, setSuggestionNotice] = useState("");
   const [analysisError, setAnalysisError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiProgress, setAiProgress] = useState<AiProgress | null>(null);
@@ -292,6 +294,7 @@ export function WorkspaceDashboard() {
       setFindings([]);
       setSuggestions([]);
       setAnalysisError("");
+      setSuggestionNotice("");
       setResumePage(page);
       setPagination({ page, pageCount: 1, xhtml: text });
     } catch (error) {
@@ -361,6 +364,7 @@ export function WorkspaceDashboard() {
     try {
       if (unsavedRef.current && !(await saveRef.current())) return;
       await flushPositionRef.current();
+      await allowRecentProject(target.path);
       await openProjectFolder(target.path);
     } catch (error) {
       await message(String(error), { title: "Não foi possível abrir o último trabalho", kind: "error" });
@@ -394,13 +398,13 @@ export function WorkspaceDashboard() {
   }, [activeDocument?.path, documents, editorText, effortOptions, glossary, keyStatus, models, pagination.page, pagination.pageCount, pagination.xhtml, profile?.needsOriginal, profile?.usesMemory, profileId, projectRoot, projectSettings, providerId, review.hasOriginal, review.lines, scope, selectedEffort]);
 
   const applySuggestion = useCallback((suggestion: EditorialSuggestion) => {
-    const before = suggestion.before.trim();
-    if (!before || !editorText.includes(before)) {
-      setAnalysisError("Essa sugestão não foi aplicada porque o trecho original não foi localizado no XHTML atual. Revise-a manualmente.");
+    const next = applyTextSuggestion(editorText, suggestion.before, suggestion.after);
+    if (next === null) {
+      setSuggestionNotice("Não apliquei esta sugestão: o trecho “antes” não bate com o texto atual (talvez já tenha sido editado). Localize-o no capítulo e ajuste à mão.");
       return;
     }
-    // Função de substituição: "$&" e similares em suggestion.after não podem virar padrões.
-    setEditorText((current) => current.replace(before, () => suggestion.after));
+    setSuggestionNotice("");
+    setEditorText(next);
     setExternalEditorRevision((current) => current + 1);
     setSuggestions((current) => current.filter((item) => item !== suggestion));
   }, [editorText]);
@@ -623,7 +627,7 @@ export function WorkspaceDashboard() {
       </div>
       {isSettingsOpen && <AiSettingsDialog activeProviderId={providerId} models={models} availableModels={availableModels} keyStatus={keyStatus} onClose={() => setIsSettingsOpen(false)} onProviderChange={setProviderId} onModelChange={(id, model) => setModels((current) => ({ ...current, [id]: model }))} onModelsLoaded={(id, loadedModels) => setAvailableModels((current) => ({ ...current, [id]: loadedModels }))} onKeyStatusChange={updateKeyStatus} />}
       {isNotebookOpen && <NotebookDialog projectRoot={projectRoot} chapters={documents} activeChapterIndex={Math.max(activeIndex, 0)} activeChapterLines={translatedLines} ai={{ providerId, model: models[providerId], reasoningEffort: effortOptions?.configurable ? selectedEffort : null, ready: Boolean(keyStatus[providerId] && models[providerId]) }} genre={projectSettings.genre} glossaryLines={glossary} glossaryData={glossaryData} initialPath={notebookStart || undefined} onClose={() => setIsNotebookOpen(false)} onChanged={() => setMemoryNote("")} />}
-      {resultsOpen && <ResultsPanel tab={resultsTab} onTab={setResultsTab} onClose={() => setResultsOpen(false)} summary={analysis} error={analysisError} findings={findings} suggestions={suggestions} onApply={applySuggestion}
+      {resultsOpen && <ResultsPanel tab={resultsTab} onTab={setResultsTab} onClose={() => setResultsOpen(false)} summary={analysis} error={analysisError} findings={findings} suggestions={suggestions} notice={suggestionNotice} onApply={applySuggestion}
         extra={<>{memoryNote && <p className="privacy-note">{memoryNote}</p>}{genesis && <GenesisCard genesis={genesis} genreLabel={genreLabel} />}</>}
         diagnostics={<>{projectSettings.translationMode && review.report && <FidelityCard report={review.report} />}<ScanPanel text={chapterText} options={scanOptions} genreLabel={genreLabel} onApplyFluency={(fix) => applySuggestion({ before: fix.before, after: fix.after, reason: fix.reason })} /></>} />}
       {isBibleOpen && <BibleDialog projectRoot={projectRoot} chapters={documents} activeChapterIndex={Math.max(activeIndex, 0)} ai={{ providerId, model: models[providerId], reasoningEffort: effortOptions?.configurable ? selectedEffort : null, ready: Boolean(keyStatus[providerId] && models[providerId]) }} genre={projectSettings.genre} glossaryLines={glossary} onClose={() => setIsBibleOpen(false)} onChanged={() => setMemoryNote("")} />}
