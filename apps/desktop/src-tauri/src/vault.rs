@@ -351,6 +351,7 @@ impl Vault {
                 }
             }
             rows.extend(records::parse(&note.meta.path, &note.body));
+            if note.meta.kind == Kind::Registro { rows.extend(records::parse_keyed(&note.meta.path, note.meta.heading.as_deref().unwrap_or(&note.meta.title), &note.body)); }
         }
         let summaries = records::summarize(&rows);
         Ok(VaultIndex { exists: self.exists(), notes: notes.into_iter().map(|n| n.meta).collect(), edges, unresolved, records: summaries, record_rows: rows })
@@ -1103,7 +1104,7 @@ mod tests {
     fn real_vault_end_to_end_report() {
         let fixtures = std::env::var("LIVRO_FIXTURE_DIR").expect("defina LIVRO_FIXTURE_DIR");
         let dir = project();
-        for (file, rel) in [("182635df-Biblia-L1-A-Cura.md", "01-Biblias/Biblia-L1-A-Cura.md"), ("1f7cb255-Registro-de-Conflitos-de-Fonte.md", "07-Revisao/Registro-de-Conflitos-de-Fonte.md"), ("b4d13cf7-Plottwists-L1.md", "05-Plots/Plottwists-L1.md"), ("8114a467-Eugenio-Castelo.md", "04-Personagens/Fichas/Eugenio-Castelo.md"), ("955f70e0-Matriz-de-Relacoes.md", "04-Personagens/Matriz-de-Relacoes.md"), ("26bbd4b0-Indice.md", "04-Personagens/Indice.md"), ("9aa13957-Regras-Canonicas.md", "03-Mundo/Regras-Canonicas.md"), ("1ed8972a-Cronologia-Canonica.md", "03-Mundo/Cronologia-Canonica.md")] {
+        for (file, rel) in [("182635df-Biblia-L1-A-Cura.md", "01-Biblias/Biblia-L1-A-Cura.md"), ("1f7cb255-Registro-de-Conflitos-de-Fonte.md", "07-Revisao/Registro-de-Conflitos-de-Fonte.md"), ("b4d13cf7-Plottwists-L1.md", "05-Plots/Plottwists-L1.md"), ("8114a467-Eugenio-Castelo.md", "04-Personagens/Fichas/Eugenio-Castelo.md"), ("955f70e0-Matriz-de-Relacoes.md", "04-Personagens/Matriz-de-Relacoes.md"), ("26bbd4b0-Indice.md", "04-Personagens/Indice.md"), ("9aa13957-Regras-Canonicas.md", "03-Mundo/Regras-Canonicas.md"), ("1ed8972a-Cronologia-Canonica.md", "03-Mundo/Cronologia-Canonica.md"), ("3e95dfa0-Verificacao-de-Pontas-Soltas.md", "06-Mapas/Verificacao-de-Pontas-Soltas.md"), ("3905b9f7-Mapa-de-Ancoras.md", "06-Mapas/Mapa-de-Ancoras.md"), ("c9ffaa16-Mapa-de-Lacunas.md", "06-Mapas/Mapa-de-Lacunas.md"), ("568d00cf-Mapa-Interligacoes.md", "06-Mapas/Mapa-Interligacoes.md")] {
             let target = dir.path().join(rel);
             fs::create_dir_all(target.parent().unwrap()).unwrap();
             fs::copy(std::path::Path::new(&fixtures).join(file), target).unwrap();
@@ -1120,6 +1121,8 @@ mod tests {
         targets.sort(); targets.dedup();
         println!("alvos ausentes (notas que o vault completo teria): {}", targets.len());
         println!("registros: {} IDs ({} linhas)", idx.records.len(), idx.record_rows.len());
+        let keyed: Vec<(&str, &str)> = idx.records.iter().filter(|r| r.keyed).map(|r| (r.prefix.as_str(), r.id.as_str())).collect();
+        println!("registros por nome: {} -> {:?}", keyed.len(), keyed);
         let ctx = vault.memory(&["Íris abriu os olhos. Lívia escreveu símbolos enquanto Eugênio observava. O poder falhou outra vez.".to_string()], &[]).unwrap();
         println!("--- MEMÓRIA ({} caracteres) ---\n{}", ctx.text.chars().count(), ctx.text);
         println!("--- usados: {:?}", ctx.notes_used);

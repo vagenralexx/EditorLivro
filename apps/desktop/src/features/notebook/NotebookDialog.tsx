@@ -164,12 +164,12 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   const neighbors = useMemo(() => { const set = new Set<string>(); if (hover) { set.add(hover); for (const edge of graph.edges) { if (edge.from === hover) set.add(edge.to); if (edge.to === hover) set.add(edge.from); } } return set; }, [graph.edges, hover]);
 
   const records = index?.records ?? [];
-  const recordIds = useMemo(() => new Set(records.map((record) => record.id)), [records]);
+  const recordIds = useMemo(() => new Set(records.filter((record) => !record.keyed).map((record) => record.id)), [records]);
   const prefixes = useMemo(() => { const counts = new Map<string, number>(); for (const record of records) counts.set(record.prefix, (counts.get(record.prefix) ?? 0) + 1); return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)); }, [records]);
   const filteredRecords = records.filter((record) => (!recordPrefix || record.prefix === recordPrefix) && (recordStatus === "todos" || record.status === recordStatus) && (!recordQuery || `${record.id} ${record.title}`.toLowerCase().includes(recordQuery.toLowerCase())));
-  const selectedRecord: RecordSummary | undefined = records.find((record) => record.id === recordId);
-  const recordRows = (index?.recordRows ?? []).filter((row) => row.id === recordId);
-  const openRecord = useCallback((id: string) => { setRecordId(id); setRecordPrefix(""); setRecordStatus("todos"); setRecordQuery(""); setTab("records"); }, []);
+  const selectedRecord: RecordSummary | undefined = records.find((record) => record.uid === recordId);
+  const recordRows = (index?.recordRows ?? []).filter((row) => row.uid === recordId);
+  const openRecord = useCallback((id: string) => { setRecordId(records.find((record) => record.id === id && !record.keyed)?.uid ?? id); setRecordPrefix(""); setRecordStatus("todos"); setRecordQuery(""); setTab("records"); }, [records]);
   const mdLinks = { resolve, onOpen: (path: string) => void open(path), onCreate: (target: string) => void createNote("nota", target), isRecord: (id: string) => recordIds.has(id), onRecord: openRecord };
 
   const empty = index !== null && notes.length === 0 && !creating;
@@ -241,20 +241,20 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
 
         {tab === "records" && <div className="records-view">
           <div className="records-list">
-            {records.length === 0 ? <p className="notebook-hint">Nenhum registro encontrado. Registros são linhas de tabela Markdown cuja primeira coluna é um ID estável (CF-01, FIO-03, LAC-02, PT-L1-01…), como nos seus Registro de Conflitos, Plot twists e Mapa de Fios.</p> : <>
+            {records.length === 0 ? <p className="notebook-hint">Nenhum registro encontrado. Registros são linhas de tabela Markdown cuja primeira coluna é um ID estável (CF-01, FIO-03, LAC-02, PT-L1-01…) ou, nas notas do tipo Registro/Mapa, o nome do item (Mapa de Âncoras, Matriz de Relações, Verificação de Pontas Soltas).</p> : <>
               <div className="records-filters">
                 <button type="button" className={recordPrefix === "" ? "active" : ""} onClick={() => setRecordPrefix("")}>Todos ({records.length})</button>
                 {prefixes.map(([prefix, count]) => <button key={prefix} type="button" className={recordPrefix === prefix ? "active" : ""} onClick={() => setRecordPrefix(prefix)}>{prefix} ({count})</button>)}
                 <select value={recordStatus} onChange={(event) => setRecordStatus(event.target.value as StatusFilter)} aria-label="Filtrar por estado"><option value="todos">Qualquer estado</option><option value="aberto">Abertos</option><option value="resolvido">Resolvidos</option></select>
                 <input type="search" placeholder="Buscar ID ou texto…" value={recordQuery} onChange={(event) => setRecordQuery(event.target.value)} aria-label="Buscar registros" />
               </div>
-              {filteredRecords.map((record) => <button key={record.id} type="button" className={`record-item ${record.id === recordId ? "active" : ""}`} onClick={() => setRecordId(record.id)}><b>{record.id}</b><span>{record.title || "—"}</span>{record.status ? <i className={`status-badge ${record.status}`} title="Estado inferido do texto da última linha; o arquivo não é alterado">{record.status}</i> : <i />}</button>)}
+              {filteredRecords.map((record) => <button key={record.uid} type="button" className={`record-item ${record.uid === recordId ? "active" : ""} ${record.keyed ? "keyed" : ""}`} onClick={() => setRecordId(record.uid)}><b>{record.id}</b><span>{record.title || "—"}</span>{record.status ? <i className={`status-badge ${record.status}`} title="Estado inferido do texto da última linha; o arquivo não é alterado">{record.status}</i> : <i />}</button>)}
               {filteredRecords.length === 0 && <p className="muted">Nenhum registro com esses filtros.</p>}
             </>}
           </div>
           <aside className="record-detail">
             {!selectedRecord ? <p className="muted">Selecione um registro para ver todas as linhas em que ele aparece. O estado mostrado é <b>inferido</b> do texto (ex.: “resolvido”, “segue aberto”) e nunca é gravado nos seus arquivos.</p> : <>
-              <h4>{selectedRecord.id}</h4>
+              <h4>{selectedRecord.id}{selectedRecord.keyed && <small className="muted"> · {selectedRecord.prefix}</small>}</h4>
               <p>{selectedRecord.status ? <i className={`status-badge ${selectedRecord.status}`}>{selectedRecord.status} (inferido)</i> : <span className="muted">estado não declarado</span>} · {selectedRecord.occurrences} linha(s)</p>
               {recordRows.map((row, i) => <div className="row-block" key={`${row.note}:${row.line}`}>
                 <small className="muted">{i === recordRows.length - 1 && recordRows.length > 1 ? "Mais recente · " : ""}{row.note}, linha {row.line}</small>

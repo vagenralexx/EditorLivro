@@ -156,3 +156,5 @@
 .bible-ai summary { cursor: pointer; font-weight: 800; font-size: 12px; }
 .bible-chapters ul { max-height: 160px; margin: 4px 0; padding: 0; overflow-y: auto; list-style: none; font-size: 12px; }
 .bible-proposal textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #b9a6e6; border-radius: 10px; font: 12.5px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+.record-item.keyed { grid-template-columns: minmax(90px, 210px) minmax(0, 1fr) auto; }
+.record-item.keyed b { font-family: inherit; font-size: 12px; }

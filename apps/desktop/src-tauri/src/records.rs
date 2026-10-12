@@ -13,6 +13,10 @@ use std::sync::OnceLock;
 #[serde(rename_all = "camelCase")]
 pub struct Record {
     pub id: String,
+    /// Chave única do registro (o próprio ID, ou `nota#chave` nos registros por nome).
+    pub uid: String,
+    /// Registro por nome (primeira coluna sem ID, ex.: "Relógio de Jorge" no Mapa de Âncoras).
+    pub keyed: bool,
     pub prefix: String,
     /// Caminho da nota (relativo ao caderno) e linha (1-based) onde o registro está.
     pub note: String,
@@ -27,6 +31,8 @@ pub struct Record {
 #[serde(rename_all = "camelCase")]
 pub struct RecordSummary {
     pub id: String,
+    pub uid: String,
+    pub keyed: bool,
     pub prefix: String,
     /// Texto curto do registro (segunda coluna da primeira ocorrência).
     pub title: String,
@@ -87,9 +93,29 @@ pub fn parse(note: &str, body: &str) -> Vec<Record> {
         let first = cells.first().map(|c| clean_cell(c)).unwrap_or_default();
         if id_pattern().is_match(&first) {
             let status = infer_status(&cells);
-            out.push(Record { prefix: first.split('-').next().unwrap_or("").to_string(), id: first, note: note.to_string(), line: index + 1, headers: headers.clone(), cells: cells.clone(), status });
+            out.push(Record { prefix: first.split('-').next().unwrap_or("").to_string(), uid: first.clone(), keyed: false, id: first, note: note.to_string(), line: index + 1, headers: headers.clone(), cells: cells.clone(), status });
         }
         previous = Some(cells);
+    }
+    out
+}
+
+/// Registros por NOME: tabelas de uma nota do tipo Registro cuja primeira coluna não é um ID
+/// (Mapa de Âncoras, Verificação de Pontas Soltas, Matriz de Relações…). `label` agrupa na interface.
+pub fn parse_keyed(note: &str, label: &str, body: &str) -> Vec<Record> {
+    let rows: Vec<Option<Vec<String>>> = body.lines().map(split_row).collect();
+    let mut out = Vec::new();
+    let mut headers: Vec<String> = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        let Some(cells) = row else { continue };
+        if is_separator(cells) { continue; }
+        let next_is_separator = rows.get(i + 1).and_then(|r| r.as_ref()).map(|c| is_separator(c)).unwrap_or(false);
+        if next_is_separator { headers = cells.iter().map(|c| clean_cell(c)).collect(); continue; }
+        if i > 0 && rows[i - 1].is_none() { headers.clear(); } // linha solta depois de texto: sem tabela
+        let key = cells.first().map(|c| clean_cell(c)).unwrap_or_default();
+        if headers.is_empty() || cells.len() < 2 || key.is_empty() || id_pattern().is_match(&key) { continue; }
+        let status = infer_status(cells);
+        out.push(Record { id: key.clone(), uid: format!("{note}#{key}"), keyed: true, prefix: label.chars().take(40).collect(), note: note.to_string(), line: i + 1, headers: headers.clone(), cells: cells.clone(), status });
     }
     out
 }
@@ -97,17 +123,17 @@ pub fn parse(note: &str, body: &str) -> Vec<Record> {
 /// Um item por ID, na ordem da primeira aparição.
 pub fn summarize(records: &[Record]) -> Vec<RecordSummary> {
     let mut order: Vec<String> = Vec::new();
-    let mut by_id: HashMap<&str, Vec<&Record>> = HashMap::new();
+    let mut by_uid: HashMap<&str, Vec<&Record>> = HashMap::new();
     for record in records {
-        if !by_id.contains_key(record.id.as_str()) { order.push(record.id.clone()); }
-        by_id.entry(&record.id).or_default().push(record);
+        if !by_uid.contains_key(record.uid.as_str()) { order.push(record.uid.clone()); }
+        by_uid.entry(&record.uid).or_default().push(record);
     }
-    order.into_iter().map(|id| {
-        let rows = &by_id[id.as_str()];
+    order.into_iter().map(|uid| {
+        let rows = &by_uid[uid.as_str()];
         let first = rows[0];
         let last = rows[rows.len() - 1];
         let title: String = first.cells.get(1).map(|c| clean_cell(c)).unwrap_or_default().chars().take(200).collect();
-        RecordSummary { prefix: first.prefix.clone(), title, note: last.note.clone(), line: last.line, status: rows.iter().rev().find_map(|r| r.status), occurrences: rows.len(), id }
+        RecordSummary { id: first.id.clone(), keyed: first.keyed, prefix: first.prefix.clone(), title, note: last.note.clone(), line: last.line, status: rows.iter().rev().find_map(|r| r.status), occurrences: rows.len(), uid }
     }).collect()
 }
 
@@ -138,6 +164,22 @@ mod tests {
         assert_eq!(cf34.title, "C35 manda Caio correr");
         assert_eq!(summaries.iter().find(|s| s.id == "CF-30").unwrap().status, Some("aberto"));
         assert_eq!(summaries.len(), 6, "CF-01, 08, 30, 34, 35 e 49");
+    }
+
+    #[test]
+    fn named_tables_become_keyed_records_without_header_rows_or_id_rows() {
+        let body = "# Mapa de Âncoras\n\n| Âncora | L1 | L2 | O que deve verificar |\n|---|---|---|---|\n| Relógio de Jorge | mesinha | gaveta | não misturar |\n| Anel de Rafael | clareira | “um dia” | cena de resolução em aberto |\n\n| ID | Lacuna |\n|---|---|\n| LAC-01 | x |\n| Caso 38 | y |\n\nlinha solta\n| Solta | z |\n";
+        let keyed = parse_keyed("06/Mapa.md", "Mapa de Âncoras", body);
+        let keys: Vec<&str> = keyed.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(keys, vec!["Relógio de Jorge", "Anel de Rafael", "Caso 38"], "sem cabeçalho, sem ID e sem linha solta");
+        assert!(keyed.iter().all(|r| r.keyed && r.prefix == "Mapa de Âncoras"));
+        assert_eq!(keyed[0].headers, vec!["Âncora", "L1", "L2", "O que deve verificar"]);
+        assert_eq!(keyed[1].status, Some("aberto"));
+        assert_eq!(keyed[0].uid, "06/Mapa.md#Relógio de Jorge");
+        // O mesmo nome em outra nota é outro registro.
+        let other = parse_keyed("06/Verificacao.md", "Verificação", "| Fio | Resultado |\n|---|---|\n| Relógio de Jorge | forte |\n");
+        let all: Vec<Record> = keyed.into_iter().chain(other).collect();
+        assert_eq!(summarize(&all).len(), 4);
     }
 
     #[test]

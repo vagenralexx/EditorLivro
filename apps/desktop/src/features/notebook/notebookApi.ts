@@ -17,8 +17,8 @@ export const kindOrder: NoteKind[] = ["personagem", "lugar", "fio", "evento", "m
 
 export interface NoteMeta { heading: string | null; path: string; title: string; kind: NoteKind; aliases: string[]; words: number; modified: number; state: string | null; }
 export type RecordStatus = "aberto" | "resolvido" | "supersedido";
-export interface RecordSummary { id: string; prefix: string; title: string; note: string; line: number; status: RecordStatus | null; occurrences: number; }
-export interface RecordRow { id: string; prefix: string; note: string; line: number; headers: string[]; cells: string[]; status: RecordStatus | null; }
+export interface RecordSummary { id: string; uid: string; keyed: boolean; prefix: string; title: string; note: string; line: number; status: RecordStatus | null; occurrences: number; }
+export interface RecordRow { id: string; uid: string; keyed: boolean; prefix: string; note: string; line: number; headers: string[]; cells: string[]; status: RecordStatus | null; }
 export interface VaultIndex { exists: boolean; notes: NoteMeta[]; edges: { from: string; to: string }[]; unresolved: { from: string; target: string }[]; records: RecordSummary[]; recordRows: RecordRow[]; }
 export interface VaultLocation { path: string; isDefault: boolean; exists: boolean; mapping: Record<string, string>; }
 export interface SnapshotInfo { name: string; reason: string; createdAt: string; sizeBytes: number; }
