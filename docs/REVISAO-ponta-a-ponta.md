@@ -168,6 +168,16 @@ Estrutura enviada pelo autor (`01-Biblias`, `01-Governanca`, `02-Trilogia`, `03-
 - **Recap gerado pela IA nunca substitui uma nota do autor.** Em nota existente do autor vai um bloco delimitado (`<!-- recap-do-app:inicio/fim -->`, "Recap do app — revise"), regravado sozinho nas próximas vezes e sem tocar no resto. Nota nova segue a convenção do vault (mesma pasta, prefixo e zeros: `Capitulo-07`); nota criada pelo app (`gerado-por: editor-de-livros`) continua sendo substituída por inteiro.
 - Pastas novas mantêm a grafia do vault (`07-Revisao/Logs`, não `07-revisao/logs`).
 
+## Painel de IA reestruturado e painel flutuante de resultados (round 14)
+
+Problema: o painel direito misturava modelo, perfil, opções, análise, resultados, sugestões e diagnóstico numa coluna de 280 px; botões ficavam cortados com "…".
+
+- **Painel direito só com ações** (`features/assistant/AssistantPanel.tsx`, 340 px): *chip do modelo* (abre um seletor em popover, com foco preso e Esc), cartão **Analisar com IA** (perfil, escopo Página/Capítulo, botão primário, progresso e cancelar, motivo quando está desabilitado), cartão **Sem IA** (diagnóstico instantâneo) e **Opções deste livro** recolhidas.
+- **Resultados em painel flutuante** (`ResultsPanel.tsx`): abre sozinho ao terminar a análise, arrastável pelo cabeçalho, redimensionável, recolhível, Esc fecha, com abas *Resultado · Sugestões · Diagnóstico*. Aplicar uma sugestão a remove da lista. O painel direito mostra um atalho "Ver resultados · N achados · N sugestões".
+- **Topo:** trilha (livro › capítulo › página) à esquerda; ações à direita com **Exportar EPUB** como ação primária quando há projeto (e "Abrir projeto" quando não há). Lateral agrupada em **CONSULTAR** (Referências, Caderno, Bíblia) e **EDITAR** (Substituir, Glossário).
+- Reticências finais removidas dos rótulos de botões (ações que abrem diálogo não precisam de "…").
+- Verificação: axe-core 0 violações (claro e escuro, painel, popover, abas, opções e todos os diálogos), teclado (foco entra/volta, Esc), 1080 e 1366 px. **Só foi testado no navegador com comandos Tauri simulados**, não no app Windows.
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.

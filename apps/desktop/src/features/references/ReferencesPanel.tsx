@@ -105,7 +105,7 @@ export function ReferencesPanel({ projectRoot, pageLines, chapterLines, chapterN
             {entity.notes.length > 0 && <><h4>Notas que a citam</h4><ul>{entity.notes.map((note) => <li key={note.path}><button type="button" onClick={() => void show(note.path)}>{label(note)} <small>{kindInfo[note.kind]?.label} · {note.count}×</small></button></li>)}</ul></>}
             {entity.sections.length === 0 && entity.notes.length === 0 && <p className="muted">Mais nenhuma nota ou seção cita este nome.</p>}</>}
         </div>
-        <footer className="refs-actions"><button className="secondary-button" type="button" onClick={() => onOpenInNotebook(entity.path)}>Abrir no Caderno</button><button className="secondary-button" type="button" onClick={() => onReplaceName(searchName)} title="Trocar este nome no livro">Substituir nome…</button></footer>
+        <footer className="refs-actions"><button className="secondary-button" type="button" onClick={() => onOpenInNotebook(entity.path)}>Abrir no Caderno</button><button className="secondary-button" type="button" onClick={() => onReplaceName(searchName)} title="Trocar este nome no livro">Substituir nome</button></footer>
       </>}
     </aside>
   );

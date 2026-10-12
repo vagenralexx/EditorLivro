@@ -13,6 +13,8 @@ import { isProjectBroken, loadProject, patchProject, toStoredPath } from "../pro
 import { useDialogA11y } from "../../shared/useDialogA11y";
 import { BibleDialog } from "../notebook/BibleDialog";
 import { recentProjects, resumeLabel, touchRecentProject, type RecentProject } from "../recent/recentApi";
+import { AssistantPanel } from "../assistant/AssistantPanel";
+import { ResultsPanel, type ResultsTab } from "../assistant/ResultsPanel";
 import { ReferencesPanel } from "../references/ReferencesPanel";
 import { ReplaceDialog } from "../replace/ReplaceDialog";
 import { samePath } from "../replace/replaceApi";
@@ -127,6 +129,8 @@ export function WorkspaceDashboard() {
   const [isReplaceOpen, setIsReplaceOpen] = useState(false);
   const [isReferencesOpen, setIsReferencesOpen] = useState(false);
   const [isBibleOpen, setIsBibleOpen] = useState(false);
+  const [resultsOpen, setResultsOpen] = useState(false);
+  const [resultsTab, setResultsTab] = useState<ResultsTab>("resultado");
   const [recents, setRecents] = useState<RecentProject[]>([]);
   const [notebookStart, setNotebookStart] = useState("");
   const [replaceStart, setReplaceStart] = useState("");
@@ -134,7 +138,7 @@ export function WorkspaceDashboard() {
   const [glossaryData, setGlossaryData] = useState<Glossary | null>(null);
   const [splitView, setSplitView] = useState(true);
   const [genesis, setGenesis] = useState<Genesis | null>(null);
-  const [bootstrap, setBootstrap] = useState<AppBootstrap | null>(null);
+  const [, setBootstrap] = useState<AppBootstrap | null>(null);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [activeDocument, setActiveDocument] = useState<ProjectDocument | null>(null);
   const [editorText, setEditorText] = useState("");
@@ -314,7 +318,7 @@ export function WorkspaceDashboard() {
       settingsReady.current = selected;
       glossaryLoad(selected).then((state) => { setGlossary(glossaryToLines(state.glossary)); setGlossaryData(state.glossary); }).catch(() => { setGlossary([]); setGlossaryData(null); });
       await loadDocument(savedDocument ?? files[0], savedDocument ? stored?.pagina : 1);
-    void touchRecentProject(selected).then(setRecents).catch(() => undefined);
+    void touchRecentProject(selected).then((list) => setRecents(Array.isArray(list) ? list : [])).catch(() => undefined);
   }, [loadDocument]);
 
   // Alterações do capítulo aberto não se perdem ao trocar de livro.
@@ -365,7 +369,7 @@ export function WorkspaceDashboard() {
     }
   }, [openProjectFolder, recents]);
 
-  useEffect(() => { recentProjects().then(setRecents).catch(() => setRecents([])); }, []);
+  useEffect(() => { recentProjects().then((list) => setRecents(Array.isArray(list) ? list : [])).catch(() => setRecents([])); }, []);
 
   const analyzeDocument = useCallback(async () => {
     const pageText = scope === "chapter" ? paragraphTextFromXhtml(editorText) : paragraphTextFromXhtml(pagination.xhtml || editorText);
@@ -419,6 +423,13 @@ export function WorkspaceDashboard() {
       setIsSaving(false);
     }
   }, [activeDocument, editorText, projectRoot, savedText]);
+
+  // Quando uma análise termina, o painel de resultados abre sozinho; ao trocar de capítulo (resultados limpos) ele fecha.
+  useEffect(() => {
+    if (analysisError || analysis || findings.length > 0 || suggestions.length > 0) { setResultsTab(analysisError || suggestions.length === 0 ? "resultado" : "sugestoes"); setResultsOpen(true); }
+    else setResultsOpen((open) => (resultsTab === "diagnostico" ? open : false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis, analysisError, findings]);
 
   // Atalhos: Alt+R referências, Alt+H substituir no livro, Alt+N caderno (Alt+setas já viram página).
   const shortcutRef = useRef<{ references: () => void; replace: () => void; notebook: () => void }>({ references: () => undefined, replace: () => undefined, notebook: () => undefined });
@@ -528,20 +539,30 @@ export function WorkspaceDashboard() {
     <main className={`workspace-shell ${isAppDark ? "app-night" : ""}`}>
       <header className="topbar">
         <div className="brand"><img src="/editor-livros-epub.png" alt="" className="brand-icon" /><div><h1 className="brand-title">Editor de Livros EPUB</h1><span>Local-first · XHTML · EPUB</span></div></div>
-        <div className="topbar-actions"><button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurações</button><button className="secondary-button" type="button" onClick={() => void openLastWork()} disabled={isOpening || recents.length === 0 || alreadyOpen} title={alreadyOpen ? "Este já é o livro aberto" : lastWork ? `${lastWork.name}${resumeLabel(lastWork) ? ` — ${resumeLabel(lastWork)}` : ""}` : recents.length ? `Pasta não encontrada: ${recents[0].path}` : "Ainda não há um trabalho anterior"}>Abrir último trabalho</button><button className="primary-button" type="button" onClick={openProject} disabled={isOpening}>{isOpening ? "Abrindo…" : "Abrir projeto"}</button></div>
+        {activeDocument && <div className="crumbs" aria-label="Local atual"><strong title={projectRoot}>{fileNameFromPath(projectRoot)}</strong><span aria-hidden="true">›</span><span>{activeDocument.name}</span><span>· página {pagination.page} de {pagination.pageCount}</span></div>}
+        <div className="topbar-actions">
+          <button className="secondary-button" type="button" onClick={() => void openLastWork()} disabled={isOpening || recents.length === 0 || alreadyOpen} title={alreadyOpen ? "Este já é o livro aberto" : lastWork ? `${lastWork.name}${resumeLabel(lastWork) ? ` — ${resumeLabel(lastWork)}` : ""}` : recents.length ? `Pasta não encontrada: ${recents[0].path}` : "Ainda não há um trabalho anterior"}>Abrir último trabalho</button>
+          <button className={projectRoot ? "secondary-button" : "primary-button"} type="button" onClick={openProject} disabled={isOpening}>{isOpening ? "Abrindo…" : "Abrir projeto"}</button>
+          <button className={projectRoot ? "primary-button" : "secondary-button"} type="button" onClick={() => setIsExportOpen(true)} disabled={!projectRoot} title={projectRoot ? "Gerar o arquivo .epub final" : "Abra um projeto para exportar"}>Exportar EPUB</button>
+          <button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurações</button>
+        </div>
       </header>
       <div className={isSplit ? "workspace-grid split-mode" : "workspace-grid"}>
         <aside className="library-panel" aria-label="Biblioteca do projeto">
           <div className="panel-heading"><span>PROJETO</span><button type="button" className="icon-button" onClick={openProject} aria-label="Abrir projeto XHTML">＋</button></div>
           {!documents.length ? <div className="empty-library"><div className="empty-mark">⌘</div><strong>Nenhum livro aberto</strong><p>Abra a pasta que contém os capítulos XHTML do livro.</p>{lastWork && <button className="primary-button resume-button" type="button" onClick={() => void openLastWork()} disabled={isOpening}><span>Continuar: {lastWork.name}</span>{resumeLabel(lastWork) && <small>{resumeLabel(lastWork)}</small>}</button>}<button className="secondary-button" type="button" onClick={openProject} disabled={isOpening}>Escolher pasta XHTML</button></div> : <div className="project-browser"><strong title={projectRoot}>{fileNameFromPath(projectRoot)}</strong><span>{documents.length} capítulo{documents.length === 1 ? "" : "s"} encontrado{documents.length === 1 ? "" : "s"}</span><div className="chapter-list">{documents.map((document, index) => <button key={document.path} type="button" aria-current={document.path === activeDocument?.path ? "page" : undefined} className={document.path === activeDocument?.path ? "chapter-button active" : "chapter-button"} onClick={() => requestDocument(document)}><span className="chapter-index">{String(index + 1).padStart(2, "0")}</span><span className="chapter-name">{document.name}</span></button>)}</div></div>}
           <nav className="book-tools" aria-label="Ferramentas do livro">
-            <span className="tools-heading">FERRAMENTAS DO LIVRO</span>
-            <button type="button" onClick={() => setIsReferencesOpen((open) => !open)} disabled={!projectRoot || !activeDocument} aria-pressed={isReferencesOpen} title="Para os nomes citados nesta página: ficha, ligações, registros e bíblia do caderno"><span>Referências</span><kbd>Alt+R</kbd></button>
-            <button type="button" onClick={() => { setNotebookStart(""); setIsNotebookOpen(true); }} disabled={!projectRoot} title="Memória entre capítulos: personagens, lugares, fios, registros e recaps"><span>Caderno</span><kbd>Alt+N</kbd></button>
-            <button type="button" onClick={() => setIsBibleOpen(true)} disabled={!projectRoot} title="Fatos canônicos da série, do livro ou do arco, por seção, com IA opcional"><span>Bíblia</span></button>
-            <button type="button" onClick={() => void openReplace()} disabled={!projectRoot || documents.length === 0} title="Troca palavras inteiras (ex.: nome de personagem) com prévia e desfazer"><span>Substituir no livro…</span><kbd>Alt+H</kbd></button>
-            <button type="button" onClick={() => setIsGlossaryOpen(true)} disabled={!projectRoot}><span>{glossary.length > 0 ? "Glossário…" : "Criar glossário…"}</span></button>
-            <button type="button" onClick={() => setIsExportOpen(true)} disabled={!projectRoot} title={projectRoot ? "Gerar o arquivo .epub final" : "Abra um projeto para exportar"}><span>Exportar EPUB…</span></button>
+            <div className="tools-group" role="group" aria-labelledby="tools-consult">
+              <span className="tools-heading" id="tools-consult">CONSULTAR</span>
+              <button type="button" onClick={() => setIsReferencesOpen((open) => !open)} disabled={!projectRoot || !activeDocument} aria-pressed={isReferencesOpen} title="Para os nomes citados nesta página: ficha, ligações, registros e bíblia do caderno"><span>Referências</span><kbd>Alt+R</kbd></button>
+              <button type="button" onClick={() => { setNotebookStart(""); setIsNotebookOpen(true); }} disabled={!projectRoot} title="Memória entre capítulos: personagens, lugares, fios, registros e recaps"><span>Caderno</span><kbd>Alt+N</kbd></button>
+              <button type="button" onClick={() => setIsBibleOpen(true)} disabled={!projectRoot} title="Fatos canônicos da série, do livro ou do arco, por seção, com IA opcional"><span>Bíblia</span></button>
+            </div>
+            <div className="tools-group" role="group" aria-labelledby="tools-edit">
+              <span className="tools-heading" id="tools-edit">EDITAR</span>
+              <button type="button" onClick={() => void openReplace()} disabled={!projectRoot || documents.length === 0} title="Troca palavras inteiras (ex.: nome de personagem) com prévia e desfazer"><span>Substituir no livro</span><kbd>Alt+H</kbd></button>
+              <button type="button" onClick={() => setIsGlossaryOpen(true)} disabled={!projectRoot}><span>{glossary.length > 0 ? "Glossário" : "Criar glossário"}</span></button>
+            </div>
           </nav>
           <div className="safety-card"><span className="safety-dot" /><div><strong>Backup antes de salvar</strong><p>Confirmação e cópia do original antes de cada gravação.</p></div></div>
         </aside>
@@ -555,45 +576,56 @@ export function WorkspaceDashboard() {
           </div>
           <div className="reader-footer"><span>{activeDocument ? editorText === savedText ? "Todas as alterações estão salvas" : "Alterações não gravadas — o XHTML será atualizado quando você salvar" : "Nenhum arquivo carregado"}</span><span>Página {pagination.page} de {pagination.pageCount} · Ctrl + S para salvar</span></div>
         </section>
-        <aside className="ai-panel" aria-label="Assistente editorial">
-          <div className="panel-heading"><span>ASSISTENTE EDITORIAL</span><span className="live-dot">●</span></div>
-          <div className="ai-intro"><span className="ai-orb">✦</span><div><strong>Skill editorial estruturada</strong><p>A IA sugere; você revisa e aplica com diff.</p></div></div>
-          <div className="provider-status"><span>{provider.badge}</span><div><strong>{provider.label}</strong><small>{models[providerId] ? friendlyModelName(models[providerId]) : "Conecte uma chave para carregar os modelos"}</small><small>{keyStatus[providerId] ? availableModels[providerId].length ? `✓ ${availableModels[providerId].length} modelos neste servidor` : "Chave salva; catálogo ainda não carregado" : "Chave não configurada"}</small></div></div>
-          <label className="field-label quick-model-field">MODELO DE ANÁLISE<input className="model-search" type="search" value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder="Buscar por modelo ou servidor…" disabled={!hasAnyCatalog} aria-label="Buscar modelo por nome, identificador ou servidor" /><select value={selectedModelKey} onChange={(event) => chooseModel(event.target.value)} disabled={!hasAnyCatalog} aria-label="Modelo usado na próxima análise"><option value="">{hasAnyCatalog ? modelGroups.length ? "Selecione um modelo" : "Nenhum modelo encontrado" : "Conecte uma chave para carregar os modelos"}</option>{modelGroups.map((group) => <optgroup key={group.provider.id} label={`${group.provider.label} · ${group.models.length}`}>{group.models.map((availableModel) => <option key={`${group.provider.id}::${availableModel}`} value={`${group.provider.id}::${availableModel}`}>{friendlyModelName(availableModel)} · {availableModel}</option>)}</optgroup>)}</select><small>Cada grupo é um servidor; o modelo escolhido é enviado a ele.</small></label>
-          <label className="field-label effort-field">ESFORÇO DE RACIOCÍNIO
-            <select value={selectedEffort} onChange={(event) => { const model = models[providerId]; if (!model) return; setReasoningEfforts((current) => ({ ...current, [providerId]: { ...(current[providerId] ?? {}), [model]: event.target.value } })); }} disabled={!hasAnyCatalog || !effortOptions?.configurable} aria-label="Esforço de raciocínio usado na próxima análise">
-              {effortOptions?.configurable ? effortOptions.levels.map((level) => <option key={level.value} value={level.value}>{level.label}</option>) : <option value="auto">Automático</option>}
-            </select>
-            <small>{effortOptions?.note || (models[providerId] ? "" : "Selecione um modelo para ver as opções de esforço.")}</small>
-          </label>
-          <button className="secondary-button settings-link" type="button" onClick={() => setIsSettingsOpen(true)}>Configurar provedor e chave</button>
-          <label className="field-label">PERFIL EDITORIAL<select value={profile?.id ?? profileId} onChange={(event) => changeProfile(event.target.value)} disabled={!catalog}>{catalog ? catalog.profiles.map((item) => <option key={item.id} value={item.id} disabled={item.needsOriginal && !review.hasOriginal}>{item.label}{item.needsOriginal && !review.hasOriginal ? " (carregue o original)" : ""}</option>) : <option>Carregando…</option>}</select></label>
-          {profile && <div className="profile-card"><span>{scope === "chapter" ? "Capítulo inteiro" : "Página aberta"}</span><strong>{profile.shortLabel}</strong><p>{profile.description}</p><small>{profile.output}</small><small className="tier-hint">Nível de modelo sugerido pela skill: {profile.tier}{profile.tier === "Rápido" ? " (modelos menores respondem mais rápido)" : ""}</small>{profile.usesMemory && <small className="tier-hint">Usa a memória do caderno (recaps e notas) quando houver.</small>}</div>}
-          <label className="field-label">ESCOPO DA ANÁLISE<select value={scope} onChange={(event) => setScope(event.target.value as "page" | "chapter")}><option value="page">Página aberta (mais rápido)</option><option value="chapter">Capítulo inteiro (até 60 mil caracteres)</option></select></label>
-          <div className="project-settings"><strong>Projeto</strong>
+        <AssistantPanel
+          model={{ badge: provider.badge, provider: provider.label, name: models[providerId] ? friendlyModelName(models[providerId]) : null, effort: effortOptions?.configurable ? effortOptions.levels.find((level) => level.value === selectedEffort)?.label ?? null : null, ready: Boolean(keyStatus[providerId] && models[providerId]) }}
+          modelPicker={<>
+            <div className="provider-status"><span>{provider.badge}</span><div><strong>{provider.label}</strong><small>{keyStatus[providerId] ? availableModels[providerId].length ? `✓ ${availableModels[providerId].length} modelos neste servidor` : "Chave salva; catálogo ainda não carregado" : "Chave não configurada"}</small></div></div>
+            <label className="field-label quick-model-field">MODELO<input className="model-search" type="search" value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder="Buscar por modelo ou servidor" disabled={!hasAnyCatalog} aria-label="Buscar modelo por nome, identificador ou servidor" /><select value={selectedModelKey} onChange={(event) => chooseModel(event.target.value)} disabled={!hasAnyCatalog} aria-label="Modelo usado na próxima análise"><option value="">{hasAnyCatalog ? modelGroups.length ? "Selecione um modelo" : "Nenhum modelo encontrado" : "Conecte uma chave para carregar os modelos"}</option>{modelGroups.map((group) => <optgroup key={group.provider.id} label={`${group.provider.label} · ${group.models.length}`}>{group.models.map((availableModel) => <option key={`${group.provider.id}::${availableModel}`} value={`${group.provider.id}::${availableModel}`}>{friendlyModelName(availableModel)} · {availableModel}</option>)}</optgroup>)}</select><small>Cada grupo é um servidor; o modelo escolhido é enviado a ele.</small></label>
+            <label className="field-label effort-field">ESFORÇO DE RACIOCÍNIO
+              <select value={selectedEffort} onChange={(event) => { const model = models[providerId]; if (!model) return; setReasoningEfforts((current) => ({ ...current, [providerId]: { ...(current[providerId] ?? {}), [model]: event.target.value } })); }} disabled={!hasAnyCatalog || !effortOptions?.configurable} aria-label="Esforço de raciocínio usado na próxima análise">
+                {effortOptions?.configurable ? effortOptions.levels.map((level) => <option key={level.value} value={level.value}>{level.label}</option>) : <option value="auto">Automático</option>}
+              </select>
+              <small>{effortOptions?.note || (models[providerId] ? "" : "Selecione um modelo para ver as opções de esforço.")}</small>
+            </label>
+            <button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurar provedor e chave</button>
+          </>}
+          profiles={catalog ? catalog.profiles.map((item) => ({ id: item.id, label: item.label, description: item.description, tier: item.tier, usesMemory: item.usesMemory, disabled: item.needsOriginal && !review.hasOriginal })) : []}
+          profileId={profile?.id ?? profileId}
+          onProfile={(id) => changeProfile(id as EditorialProfileId)}
+          scope={scope}
+          onScope={setScope}
+          pageLabel={`Página ${pagination.page}`}
+          onAnalyze={analyzeDocument}
+          analyzing={isAnalyzing}
+          progressText={progressLabel(aiProgress)}
+          onCancel={() => void invoke("cancel_ai_analysis")}
+          blocker={!activeDocument ? "Abra um capítulo para analisar." : !keyStatus[providerId] ? "Conecte a chave de um provedor (botão do modelo, acima)." : !models[providerId] ? "Escolha um modelo no botão acima." : null}
+          results={{ findings: findings.length, suggestions: suggestions.length, error: Boolean(analysisError), hasAny: Boolean(analysisError || analysis || findings.length || suggestions.length) }}
+          onOpenResults={() => { setResultsTab(suggestions.length ? "sugestoes" : "resultado"); setResultsOpen(true); }}
+          onOpenDiagnostics={() => { setResultsTab("diagnostico"); setResultsOpen(true); }}
+          optionsSummary={`${genreLabel}${projectSettings.translationMode ? " · tradução" : ""}${projectSettings.useMemory ? " · memória" : ""}${glossary.length ? ` · glossário (${glossary.length})` : ""}`}
+          options={<>
             <label className="field-label">GÊNERO (calibra metas e limiares)<select value={projectSettings.genre} onChange={(event) => setProjectSettings((current) => ({ ...current, genre: event.target.value as GenreId }))}>{catalog?.genres.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             <label className="check"><input type="checkbox" checked={projectSettings.translationMode} onChange={(event) => setProjectSettings((current) => ({ ...current, translationMode: event.target.checked }))} /><span>É tradução EN→PT-BR (alerta suavizações e sugere fluidez)</span></label>
             {projectSettings.translationMode && <div className="original-source">
               {review.hasOriginal ? <><small>Original: {review.sourcePath} ({review.chapters.length} capítulos)</small>
                 <label className="check"><input type="checkbox" checked={splitView} onChange={(event) => setSplitView(event.target.checked)} /><span>Tela dividida (original à esquerda)</span></label>
                 <button className="secondary-button" type="button" onClick={review.clear}>Remover original</button></>
-                : <><button className="secondary-button" type="button" onClick={() => void review.choose("epub")} disabled={review.loading}>{review.loading ? "Carregando…" : "Carregar original (EPUB)…"}</button>
-                  <button className="secondary-button" type="button" onClick={() => void review.choose("folder")} disabled={review.loading}>Carregar original (pasta)…</button></>}
+                : <><button className="secondary-button" type="button" onClick={() => void review.choose("epub")} disabled={review.loading}>{review.loading ? "Carregando…" : "Carregar original (EPUB)"}</button>
+                  <button className="secondary-button" type="button" onClick={() => void review.choose("folder")} disabled={review.loading}>Carregar original (pasta)</button></>}
               {review.error && <small role="alert" style={{ color: "#a3404d" }}>{review.error}</small>}
             </div>}
             <label className="check"><input type="checkbox" checked={projectSettings.useMemory} onChange={(event) => setProjectSettings((current) => ({ ...current, useMemory: event.target.checked }))} /><span>Usar a memória do caderno nas análises que a pedem</span></label>
             <label className="check"><input type="checkbox" checked={projectSettings.adultContent} onChange={(event) => setProjectSettings((current) => ({ ...current, adultContent: event.target.checked }))} /><span>Contém cenas adultas (preservar intensidade, sem suavizar)</span></label>
             {glossary.length > 0 && <p className="glossary-chip">✓ glossário com {glossary.length} entradas enviado à IA</p>}
-          </div>
-          <button className="primary-button wide-button" type="button" onClick={analyzeDocument} disabled={isAnalyzing || !activeDocument}>{isAnalyzing ? (scope === "chapter" ? "Analisando capítulo…" : `Analisando página ${pagination.page}…`) : (scope === "chapter" ? "Analisar capítulo" : `Analisar página ${pagination.page}`)}</button>{isAnalyzing && <div className="analysis-progress" role="status" aria-live="polite"><span>{progressLabel(aiProgress)}</span><button type="button" className="discard-button" onClick={() => void invoke("cancel_ai_analysis")}>Cancelar</button></div>}<p className="privacy-note">Apenas o trecho analisado (página ou capítulo, conforme o escopo) é enviado ao provedor escolhido. A chave nunca entra no XHTML ou EPUB.</p>
-          {memoryNote && <p className="privacy-note">{memoryNote}</p>}{genesis && <GenesisCard genesis={genesis} genreLabel={genreLabel} />}{(analysisError || analysis || findings.length > 0 || suggestions.length > 0) && <section className={analysisError ? "analysis-result error" : "analysis-result"} aria-live="polite"><strong>{analysisError ? "Não foi possível analisar" : "Resultado da análise"}</strong>{analysisError ? <p>{analysisError}</p> : <>{analysis && <p className="analysis-summary">{analysis}</p>}{findings.length > 0 && <div className="finding-list"><span className="finding-heading">Achados editoriais</span>{findings.map((finding, index) => <article className="finding-card" key={`${finding.title}-${index}`}><header><strong>{finding.title}</strong><span className={`severity ${finding.severity.toLocaleLowerCase("pt-BR")}`}>{finding.severity}</span></header><p>{finding.detail}</p>{finding.anchor && <blockquote><strong>Trecho:</strong> “{finding.anchor}”</blockquote>}</article>)}</div>}{suggestions.length > 0 && <div className="suggestion-list"><span className="suggestion-heading">Sugestões aplicáveis</span>{suggestions.map((suggestion, index) => <article className="suggestion-card" key={`${suggestion.before}-${index}`}><div><strong>Antes — texto atual</strong><del>{suggestion.before}</del></div><div><strong>Depois — proposta</strong><ins>{suggestion.after}</ins></div><small>{suggestion.reason}</small><button type="button" onClick={() => applySuggestion(suggestion)}>Aplicar sugestão</button></article>)}</div>}</>}</section>}
-          {projectSettings.translationMode && review.report && <FidelityCard report={review.report} />}
-          <ScanPanel text={chapterText} options={scanOptions} genreLabel={genreLabel} onApplyFluency={(fix) => applySuggestion({ before: fix.before, after: fix.after, reason: fix.reason })} />
-          <div className="module-row"><span>Módulos do núcleo</span><strong>{bootstrap ? `${bootstrap.modules.length} preparados` : "carregando"}</strong></div>
-        </aside>
+          </>}
+        />
       </div>
       {isSettingsOpen && <AiSettingsDialog activeProviderId={providerId} models={models} availableModels={availableModels} keyStatus={keyStatus} onClose={() => setIsSettingsOpen(false)} onProviderChange={setProviderId} onModelChange={(id, model) => setModels((current) => ({ ...current, [id]: model }))} onModelsLoaded={(id, loadedModels) => setAvailableModels((current) => ({ ...current, [id]: loadedModels }))} onKeyStatusChange={updateKeyStatus} />}
       {isNotebookOpen && <NotebookDialog projectRoot={projectRoot} chapters={documents} activeChapterIndex={Math.max(activeIndex, 0)} activeChapterLines={translatedLines} ai={{ providerId, model: models[providerId], reasoningEffort: effortOptions?.configurable ? selectedEffort : null, ready: Boolean(keyStatus[providerId] && models[providerId]) }} genre={projectSettings.genre} glossaryLines={glossary} glossaryData={glossaryData} initialPath={notebookStart || undefined} onClose={() => setIsNotebookOpen(false)} onChanged={() => setMemoryNote("")} />}
+      {resultsOpen && <ResultsPanel tab={resultsTab} onTab={setResultsTab} onClose={() => setResultsOpen(false)} summary={analysis} error={analysisError} findings={findings} suggestions={suggestions} onApply={applySuggestion}
+        extra={<>{memoryNote && <p className="privacy-note">{memoryNote}</p>}{genesis && <GenesisCard genesis={genesis} genreLabel={genreLabel} />}</>}
+        diagnostics={<>{projectSettings.translationMode && review.report && <FidelityCard report={review.report} />}<ScanPanel text={chapterText} options={scanOptions} genreLabel={genreLabel} onApplyFluency={(fix) => applySuggestion({ before: fix.before, after: fix.after, reason: fix.reason })} /></>} />}
       {isBibleOpen && <BibleDialog projectRoot={projectRoot} chapters={documents} activeChapterIndex={Math.max(activeIndex, 0)} ai={{ providerId, model: models[providerId], reasoningEffort: effortOptions?.configurable ? selectedEffort : null, ready: Boolean(keyStatus[providerId] && models[providerId]) }} genre={projectSettings.genre} glossaryLines={glossary} onClose={() => setIsBibleOpen(false)} onChanged={() => setMemoryNote("")} />}
       {isReferencesOpen && activeDocument && <ReferencesPanel projectRoot={projectRoot} pageLines={pageReferenceLines} chapterLines={translatedLines} chapterName={activeDocument.name} onClose={() => setIsReferencesOpen(false)} onOpenInNotebook={(path) => { setNotebookStart(path); setIsNotebookOpen(true); }} onReplaceName={(name) => { setReplaceStart(name); void openReplace(); }} />}
       {isReplaceOpen && <ReplaceDialog initialFind={replaceStart} projectRoot={projectRoot} chapters={documents} activeChapterIndex={Math.max(activeIndex, 0)} onClose={() => { setIsReplaceOpen(false); setReplaceStart(""); }} onChapterFilesChanged={onChapterFilesChanged} onVaultChanged={() => { setMemoryNote(""); glossaryLoad(projectRoot).then((state) => { setGlossary(glossaryToLines(state.glossary)); setGlossaryData(state.glossary); }).catch(() => undefined); }} />}

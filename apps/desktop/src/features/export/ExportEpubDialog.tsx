@@ -149,7 +149,7 @@ export function ExportEpubDialog({ projectRoot, chapterPaths, hasUnsavedChanges,
             <label className="check-row"><input type="checkbox" checked={wm.visibleNotice} onChange={(event) => setWm({ ...wm, visibleNotice: event.target.checked })} /> Página de licença visível (nome + código), logo após a capa</label>
             <label className="check-row"><input type="checkbox" checked={wm.forensic} onChange={(event) => setWm({ ...wm, forensic: event.target.checked })} /> Marca forense invisível nos capítulos (caracteres de largura zero; leitores de tela e busca ignoram, mas ela pode ser removida por quem reescrever o texto)</label>
           </>}
-          <div className="watermark-actions"><button className="secondary-button" type="button" onClick={() => void checkLeak()}>Verificar um EPUB suspeito…</button>{copies.length > 0 && <small>{copies.length} exemplar(es) registrado(s) em .livro-exemplares.json</small>}</div>
+          <div className="watermark-actions"><button className="secondary-button" type="button" onClick={() => void checkLeak()}>Verificar um EPUB suspeito</button>{copies.length > 0 && <small>{copies.length} exemplar(es) registrado(s) em .livro-exemplares.json</small>}</div>
           {leak && <p className="settings-feedback success" role="status">{leak}</p>}
           {copies.length > 0 && <details><summary>Exemplares registrados</summary><ul className="issue-list info">{copies.map((copy) => <li key={copy.token}><b>{copy.token}</b> — {copy.recipient} <small>{copy.createdAt.slice(0, 10)} · {copy.file}</small></li>)}</ul></details>}
         </details>
