@@ -6,6 +6,7 @@ import { fromStoredPath, loadProject, patchProject, toStoredPath } from "../proj
 import { copiesList, copiesRegister, detectWatermark, emptyEpubMetadata, epubBuild, epubInspect, epubValidate, type CopyRecord, type EpubBuildRequest, type EpubMetadata, type EpubProjectInfo, type EpubReport } from "./epubApi";
 import "../settings/AiSettingsDialog.css";
 import "./ExportEpubDialog.css";
+import { useDialogA11y } from "../../shared/useDialogA11y";
 
 interface ExportEpubDialogProps {
   projectRoot: string;
@@ -116,9 +117,10 @@ export function ExportEpubDialog({ projectRoot, chapterPaths, hasUnsavedChanges,
   const loose = info?.mode === "loose";
   const disabled = busy !== "" || hasUnsavedChanges;
 
+  const dialogRef = useDialogA11y<HTMLElement>(onClose);
   return (
     <div className="settings-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="settings-dialog export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="settings-dialog export-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="export-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="settings-title-row"><div><span className="eyebrow">PUBLICAÇÃO</span><h2 id="export-title">Exportar EPUB</h2></div><button className="dialog-close" type="button" onClick={onClose} aria-label="Fechar exportação">×</button></div>
         {busy === "loading" && <p className="settings-description">Lendo a pasta do projeto…</p>}
         {info && <p className="settings-description">{loose

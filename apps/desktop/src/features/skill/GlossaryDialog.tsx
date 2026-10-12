@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { emptyGlossary, glossaryDefaults, glossaryLoad, glossarySave, glossarySuggest, type Glossary, type TermCandidate } from "./skillApi";
 import "../settings/AiSettingsDialog.css";
 import "./GlossaryDialog.css";
+import { useDialogA11y } from "../../shared/useDialogA11y";
 
 interface GlossaryDialogProps {
   projectRoot: string;
@@ -66,9 +67,10 @@ export function GlossaryDialog({ projectRoot, chapterPaths, onClose, onSaved }: 
   }
 
   const tabs: [Tab, string][] = [["terms", `Não traduzir (${glossary.nao_traduzir.length})`], ["fixed", `Traduções fixas (${fixedRows.length})`], ["characters", `Personagens (${Object.keys(glossary.personagens).length})`], ["profanity", `Linguagem crua (${Object.keys(glossary.palavroes).length})`]];
+  const dialogRef = useDialogA11y<HTMLElement>(onClose);
   return (
     <div className="settings-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="settings-dialog glossary-dialog" role="dialog" aria-modal="true" aria-labelledby="glossary-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="settings-dialog glossary-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="glossary-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="settings-title-row"><div><span className="eyebrow">PROJETO</span><h2 id="glossary-title">Glossário do livro</h2></div><button className="dialog-close" type="button" onClick={onClose} aria-label="Fechar glossário">×</button></div>
         <p className="settings-description">{exists ? "Editando o glossario.json do projeto." : "Ainda não há glossario.json: ele será criado na pasta do projeto ao salvar."} Nomes, termos inventados e traduções fixas são enviados à IA para ela não alterá-los.</p>
         <div className="glossary-tabs" role="tablist">{tabs.map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{label}</button>)}</div>

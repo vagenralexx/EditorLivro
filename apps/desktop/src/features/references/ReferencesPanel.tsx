@@ -77,7 +77,7 @@ export function ReferencesPanel({ projectRoot, pageLines, chapterLines, chapterN
   return (
     <aside className="refs-panel" aria-label="Referências do caderno">
       <header>
-        <div><span className="eyebrow">CADERNO</span><h3>Referências</h3></div>
+        <div><span className="eyebrow">CADERNO</span><h2>Referências</h2></div>
         <button className="dialog-close" type="button" onClick={onClose} aria-label="Fechar referências">×</button>
       </header>
       {error && <p className="settings-feedback error" role="alert">{error}</p>}
@@ -91,18 +91,18 @@ export function ReferencesPanel({ projectRoot, pageLines, chapterLines, chapterN
         <p className="muted refs-hint">Clique em um nome para ver a ficha, as ligações, os registros (plots, conflitos, lacunas) e a bíblia em que ele aparece.</p>
       </> : <>
         <div className="refs-nav"><button type="button" className="link-button" onClick={back}>← {trail.length > 1 ? "voltar" : "lista"}</button><button type="button" className="link-button" onClick={() => { setEntity(null); setTrail([]); }}>lista</button></div>
-        <h4 className="refs-title"><span className="kind-dot" style={{ background: kindInfo[entity.kind]?.color }} />{name}</h4>
+        <h3 className="refs-title"><span className="kind-dot" style={{ background: kindInfo[entity.kind]?.color }} />{name}</h3>
         <small className="muted">{kindInfo[entity.kind]?.label}{entity.aliases.length ? ` · também: ${entity.aliases.join(", ")}` : ""} · <code>{entity.path}</code></small>
         <div className="refs-tabs" role="tablist">{([["ficha", "Ficha"], ["relacoes", `Relações ${entity.outgoing.length + entity.backlinks.length}`], ["registros", `Registros ${entity.records.length}`], ["biblia", `Bíblia e notas ${entity.sections.length + entity.notes.length}`]] as [Tab, string][]).map(([id, text]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{text}</button>)}</div>
         <div className="refs-body">
           {tab === "ficha" && <article className="note-preview">{renderMarkdown(entity.content, links)}</article>}
           {tab === "relacoes" && <>
-            <h5>Esta nota liga-se a</h5>{entity.outgoing.length ? <ul>{entity.outgoing.map((link) => <li key={link.path}><button type="button" onClick={() => void show(link.path)}>{label(link)} <small>{kindInfo[link.kind]?.label}</small></button></li>)}</ul> : <p className="muted">Sem links de saída.</p>}
-            <h5>Citada por (backlinks)</h5>{entity.backlinks.length ? <ul>{entity.backlinks.map((link) => <li key={link.path}><button type="button" onClick={() => void show(link.path)}>{label(link)} <small>{kindInfo[link.kind]?.label}</small></button></li>)}</ul> : <p className="muted">Nenhuma nota aponta para esta.</p>}</>}
+            <h4>Esta nota liga-se a</h4>{entity.outgoing.length ? <ul>{entity.outgoing.map((link) => <li key={link.path}><button type="button" onClick={() => void show(link.path)}>{label(link)} <small>{kindInfo[link.kind]?.label}</small></button></li>)}</ul> : <p className="muted">Sem links de saída.</p>}
+            <h4>Citada por (backlinks)</h4>{entity.backlinks.length ? <ul>{entity.backlinks.map((link) => <li key={link.path}><button type="button" onClick={() => void show(link.path)}>{label(link)} <small>{kindInfo[link.kind]?.label}</small></button></li>)}</ul> : <p className="muted">Nenhuma nota aponta para esta.</p>}</>}
           {tab === "registros" && (entity.records.length ? <ul className="refs-records">{entity.records.map((rec) => <li key={`${rec.id}-${rec.note}-${rec.line}`}><div><b>{rec.id}</b>{rec.status && <i className={`status-badge ${rec.status}`} title="Estado inferido do texto">{rec.status}</i>}</div><p>{rec.snippet || rec.title}</p><button type="button" className="link-button" onClick={() => { const target = resolve(rec.note.replace(/\.md$/u, "")); if (target) void show(target); }}>{rec.note}, linha {rec.line}</button></li>)}</ul> : <p className="muted">Nenhum registro (CF-, FIO-, LAC-, PT-…) cita este nome.</p>)}
           {tab === "biblia" && <>
-            {entity.sections.length > 0 && <><h5>Seções que citam</h5><ul className="refs-records">{entity.sections.map((sec) => <li key={`${sec.note}#${sec.heading}`}><div><b>{sec.heading}</b>{sec.status && <i className={`canon-chip ${sec.status}`}>{sec.status}</i>}</div><p>{sec.snippet}</p><button type="button" className="link-button" onClick={() => { const target = resolve(sec.note.replace(/\.md$/u, "")); if (target) void show(target); }}>{sec.noteTitle}</button></li>)}</ul></>}
-            {entity.notes.length > 0 && <><h5>Notas que a citam</h5><ul>{entity.notes.map((note) => <li key={note.path}><button type="button" onClick={() => void show(note.path)}>{label(note)} <small>{kindInfo[note.kind]?.label} · {note.count}×</small></button></li>)}</ul></>}
+            {entity.sections.length > 0 && <><h4>Seções que citam</h4><ul className="refs-records">{entity.sections.map((sec) => <li key={`${sec.note}#${sec.heading}`}><div><b>{sec.heading}</b>{sec.status && <i className={`canon-chip ${sec.status}`}>{sec.status}</i>}</div><p>{sec.snippet}</p><button type="button" className="link-button" onClick={() => { const target = resolve(sec.note.replace(/\.md$/u, "")); if (target) void show(target); }}>{sec.noteTitle}</button></li>)}</ul></>}
+            {entity.notes.length > 0 && <><h4>Notas que a citam</h4><ul>{entity.notes.map((note) => <li key={note.path}><button type="button" onClick={() => void show(note.path)}>{label(note)} <small>{kindInfo[note.kind]?.label} · {note.count}×</small></button></li>)}</ul></>}
             {entity.sections.length === 0 && entity.notes.length === 0 && <p className="muted">Mais nenhuma nota ou seção cita este nome.</p>}</>}
         </div>
         <footer className="refs-actions"><button className="secondary-button" type="button" onClick={() => onOpenInNotebook(entity.path)}>Abrir no Caderno</button><button className="secondary-button" type="button" onClick={() => onReplaceName(searchName)} title="Trocar este nome no livro">Substituir nome…</button></footer>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { kindInfo, kindOrder, snapshotCreate, snapshotRestore, snapshotsList, vaultDetectMapping, vaultLocation, vaultSetLocation, type NoteKind, type SnapshotInfo, type VaultLocation } from "./notebookApi";
 import "../settings/AiSettingsDialog.css";
 import "./Notebook.css";
+import { useDialogA11y } from "../../shared/useDialogA11y";
 
 interface ProjectDataDialogProps {
   projectRoot: string;
@@ -81,9 +82,10 @@ export function ProjectDataDialog({ projectRoot, onClose, onChanged }: ProjectDa
     { label: "Cópias de segurança", path: `${projectRoot}${s}.livro${s}snapshots` },
   ];
 
+  const dialogRef = useDialogA11y<HTMLElement>(onClose);
   return (
     <div className="settings-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="settings-dialog project-data" role="dialog" aria-modal="true" aria-labelledby="project-data-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="settings-dialog project-data" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="project-data-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="settings-title-row"><div><span className="eyebrow">SEGURANÇA DOS DADOS</span><h2 id="project-data-title">Dados do projeto</h2></div><button className="dialog-close" type="button" onClick={onClose} aria-label="Fechar">×</button></div>
         <p className="settings-description">Tudo que o app sabe sobre este livro fica <b>dentro da pasta do projeto</b>, em arquivos abertos (JSON e Markdown). Reinstalar o app ou trocar de computador não perde nada: basta abrir a mesma pasta.</p>
         {error && <p className="settings-feedback error" role="alert">{error}</p>}

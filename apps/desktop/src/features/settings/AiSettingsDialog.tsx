@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { detectProviderFromKey, friendlyModelName, providerFor, providers, type ProviderId } from "../ai/providers";
 import "./AiSettingsDialog.css";
+import { useDialogA11y } from "../../shared/useDialogA11y";
 
 interface ConnectionResult {
   provider: string;
@@ -120,9 +121,10 @@ export function AiSettingsDialog({ activeProviderId, models, availableModels, ke
     }
   }
 
+  const dialogRef = useDialogA11y<HTMLElement>(onClose);
   return (
     <div className="settings-backdrop" role="presentation" onMouseDown={onClose}>
-      <form className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}>
+      <section className="settings-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}><form className="settings-form" onSubmit={submit}>
         <div className="settings-title-row"><div><span className="eyebrow">CONFIGURAÇÕES</span><h2 id="settings-title">Provedor e credenciais de IA</h2></div><button className="dialog-close" type="button" onClick={onClose} aria-label="Fechar configurações">×</button></div>
         <p className="settings-description">A chave não é gravada no projeto, no EPUB nem em arquivos de texto. Ela fica apenas no Gerenciador de Credenciais do Windows.</p>
         <label className="settings-field">SERVIDOR (PROVEDOR)
@@ -149,7 +151,7 @@ export function AiSettingsDialog({ activeProviderId, models, availableModels, ke
           {confirmRemove && <><span className="remove-confirm">Remover a chave de {provider.label}?</span><button className="secondary-button" type="button" onClick={() => setConfirmRemove(false)} disabled={isRemoving}>Cancelar</button><button className="danger-button strong" type="button" onClick={() => void removeKey()} disabled={isRemoving}>{isRemoving ? "Removendo…" : "Sim, remover"}</button></>}
           {!confirmRemove && <button className="primary-button" type="submit" disabled={busy || isChecking}>{isConnecting ? "Conectando…" : apiKey.trim() ? "Conectar e carregar modelos" : hasSavedKey ? "Atualizar modelos" : "Conectar e carregar modelos"}</button>}
         </div>
-      </form>
+      </form></section>
     </div>
   );
 }

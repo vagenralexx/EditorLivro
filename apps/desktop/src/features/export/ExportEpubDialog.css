@@ -2,13 +2,13 @@
 .export-dialog .settings-description { margin: 10px 0 0; }
 .export-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .settings-field textarea { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #cedaea; border-radius: 8px; color: #263955; background: #fff; font: inherit; font-size: 13px; letter-spacing: normal; resize: vertical; }
-.export-cover { display: flex; align-items: center; gap: 12px; margin-top: 14px; color: #718099; font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+.export-cover { display: flex; align-items: center; gap: 12px; margin-top: 14px; color: #55657c; font-size: 10px; font-weight: 800; letter-spacing: .1em; }
 .export-cover div { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 400; letter-spacing: normal; }
 .export-cover small { overflow: hidden; max-width: 240px; color: #42516a; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .export-report { margin-top: 14px; padding: 10px 12px; border: 1px solid #d8e2ef; border-radius: 10px; font-size: 12px; background: #f7fafd; }
 .issue-list { margin: 8px 0 0; padding-left: 18px; line-height: 1.45; }
 .issue-list li { margin: 4px 0; }
-.issue-list small { display: block; color: #718099; font-size: 10px; word-break: break-all; }
+.issue-list small { display: block; color: #55657c; font-size: 10px; word-break: break-all; }
 .issue-list.error { color: #942f3d; }
 .issue-list.warning { color: #8a5a00; }
 .issue-list.info { color: #4b5b73; }
@@ -23,5 +23,5 @@
 .watermark-box .muted-note { margin: 8px 0; color: #5b6b82; font-size: 11px; line-height: 1.45; }
 .check-row { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; color: #42516a; }
 .watermark-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.watermark-actions small { color: #7b8aa0; }
+.watermark-actions small { color: #55657c; }
 .app-night .watermark-box { border-color: #2d3d4d; }

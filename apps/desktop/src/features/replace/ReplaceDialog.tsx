@@ -3,6 +3,7 @@ import { kindInfo, type NoteKind } from "../notebook/notebookApi";
 import { replaceApply, replaceHistory, replacePreview, replaceUndo, type Applied, type HistoryItem, type Preview, type Sample } from "./replaceApi";
 import "../settings/AiSettingsDialog.css";
 import "./Replace.css";
+import { useDialogA11y } from "../../shared/useDialogA11y";
 
 interface ReplaceDialogProps {
   projectRoot: string;
@@ -105,9 +106,10 @@ export function ReplaceDialog({ projectRoot, chapters, activeChapterIndex, initi
     </li>
   );
 
+  const dialogRef = useDialogA11y<HTMLElement>(onClose);
   return (
     <div className="settings-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="settings-dialog replace-dialog" role="dialog" aria-modal="true" aria-labelledby="replace-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="settings-dialog replace-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="replace-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="settings-title-row"><div><span className="eyebrow">REVISÃO</span><h2 id="replace-title">Substituir no livro</h2></div><button className="dialog-close" type="button" onClick={onClose} aria-label="Fechar">×</button></div>
         <p className="settings-description">Troca <b>palavras inteiras</b> (“Caio” não mexe em “Caiozinho”), só no texto — nunca em tags ou atributos do XHTML. A caixa acompanha o original: <i>Caio → Jordan</i>, <i>caio → jordan</i>. Você vê tudo antes, e dá para desfazer.</p>
 

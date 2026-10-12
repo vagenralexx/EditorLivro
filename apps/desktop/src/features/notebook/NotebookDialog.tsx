@@ -9,6 +9,7 @@ import { ProjectDataDialog } from "./ProjectDataDialog";
 import { RecapDialog, type AiConfig } from "./RecapDialog";
 import "../settings/AiSettingsDialog.css";
 import "./Notebook.css";
+import { useDialogA11y } from "../../shared/useDialogA11y";
 
 interface NotebookDialogProps {
   projectRoot: string;
@@ -175,9 +176,10 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   const empty = index !== null && notes.length === 0 && !creating;
   const activeChapter = chapters[activeChapterIndex];
 
+  const dialogRef = useDialogA11y<HTMLElement>(() => { void save(); onClose(); });
   return (
     <div className="settings-backdrop notebook-backdrop" role="presentation" onMouseDown={() => { void save(); onClose(); }}>
-      <section className="notebook" role="dialog" aria-modal="true" aria-labelledby="notebook-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="notebook" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="notebook-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="notebook-header">
           <div><span className="eyebrow">MEMÓRIA ENTRE CAPÍTULOS</span><h2 id="notebook-title">Caderno do livro</h2></div>
           <div className="notebook-tabs" role="tablist">{([["notes", "Notas"], ["records", `Registros${records.length ? ` (${records.length})` : ""}`], ["graph", "Grafo"], ["timeline", "Linha do tempo"]] as [Tab, string][]).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{label}</button>)}</div>
@@ -201,7 +203,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
           </div></div>}
 
         {!empty && tab === "notes" && <div className="notebook-grid">
-          <aside className="notebook-list">
+          <aside className="notebook-list" aria-label="Notas do caderno">
             <input type="search" placeholder="Buscar nota ou apelido…" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar notas" />
             {creating ? <form className="new-note" onSubmit={(event) => { event.preventDefault(); void createNote(creating.kind, creating.title); }}>
               <select value={creating.kind} onChange={(event) => setCreating({ ...creating, kind: event.target.value as NoteKind })}>{kindOrder.filter((kind) => kind !== "capitulo").map((kind) => <option key={kind} value={kind}>{kindInfo[kind].label}</option>)}</select>
@@ -211,7 +213,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
             <div className="notebook-groups">{kindOrder.map((kind) => { const group = filtered.filter((note) => note.kind === kind); if (!group.length) return null; return <details key={kind} open><summary><span className="kind-dot" style={{ background: kindInfo[kind].color }} />{kindInfo[kind].plural} <small>{group.length}</small></summary>
               <ul>{group.map((note) => <li key={note.path}><button type="button" className={note.path === selected ? "active" : ""} onClick={() => void open(note.path)} title={note.path}>{note.heading ?? note.title}{note.state === "fechado" && <small className="closed"> ✓ fechado</small>}</button></li>)}</ul></details>; })}</div>
           </aside>
-          <main className="notebook-main">
+          <div className="notebook-main">
             {!selectedMeta ? <p className="notebook-hint">Selecione uma nota à esquerda ou crie uma nova. Clique em um <span className="wikilink">[[link]]</span> para navegar entre as notas.</p> : <>
               <div className="note-head">
                 {renaming !== null ? <form onSubmit={(event) => { event.preventDefault(); void renameSelected(renaming); }}><input autoFocus value={renaming} onChange={(event) => setRenaming(event.target.value)} /><button className="primary-button" type="submit">Renomear</button><button className="secondary-button" type="button" onClick={() => setRenaming(null)}>Cancelar</button></form>
@@ -228,14 +230,14 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
                 <small className="note-help">Digite <code>[[</code> para linkar outra nota. O frontmatter (entre ---) guarda tipo, apelidos (<code>aliases</code>) e estado.</small></div>
                 : <article className="note-preview">{renderMarkdown(content, mdLinks)}{!splitFrontmatter(content).body.trim() && <p className="notebook-hint">Nota vazia. Clique em Editar para escrever.</p>}</article>}
             </>}
-          </main>
-          <aside className="notebook-side">
+          </div>
+          <aside className="notebook-side" aria-label="Ligações da nota">
             {selectedMeta ? <>
-              <section><h4>Backlinks <small>({backlinks.length})</small></h4>{backlinks.length ? <ul>{backlinks.map((note) => <li key={note.path}><button type="button" onClick={() => void open(note.path)}>{note.title}</button></li>)}</ul> : <p className="muted">Nenhuma nota aponta para esta.</p>}</section>
-              <section><h4>Links desta nota <small>({outgoing.length})</small></h4>{outgoing.length ? <ul>{outgoing.map((note) => <li key={note.path}><button type="button" onClick={() => void open(note.path)}>{note.title}</button></li>)}</ul> : <p className="muted">Sem links.</p>}{broken.length > 0 && <p className="muted broken-note">Links quebrados: {broken.map((item) => item.target).join(", ")}</p>}</section>
-              {selectedMeta.kind !== "capitulo" && <section><h4>Citada nos capítulos <small>({myMentions?.total ?? 0}×)</small></h4>{myMentions ? <ul>{myMentions.chapters.map((entry) => <li key={entry.chapter}><span>{chapters[entry.chapter]?.name ?? `cap. ${entry.chapter + 1}`}</span> <b>{entry.count}×</b></li>)}</ul> : <p className="muted">Nenhuma menção ao título ou apelidos no texto.</p>}</section>}
+              <section><h3>Backlinks <small>({backlinks.length})</small></h3>{backlinks.length ? <ul>{backlinks.map((note) => <li key={note.path}><button type="button" onClick={() => void open(note.path)}>{note.title}</button></li>)}</ul> : <p className="muted">Nenhuma nota aponta para esta.</p>}</section>
+              <section><h3>Links desta nota <small>({outgoing.length})</small></h3>{outgoing.length ? <ul>{outgoing.map((note) => <li key={note.path}><button type="button" onClick={() => void open(note.path)}>{note.title}</button></li>)}</ul> : <p className="muted">Sem links.</p>}{broken.length > 0 && <p className="muted broken-note">Links quebrados: {broken.map((item) => item.target).join(", ")}</p>}</section>
+              {selectedMeta.kind !== "capitulo" && <section><h3>Citada nos capítulos <small>({myMentions?.total ?? 0}×)</small></h3>{myMentions ? <ul>{myMentions.chapters.map((entry) => <li key={entry.chapter}><span>{chapters[entry.chapter]?.name ?? `cap. ${entry.chapter + 1}`}</span> <b>{entry.count}×</b></li>)}</ul> : <p className="muted">Nenhuma menção ao título ou apelidos no texto.</p>}</section>}
             </> : <p className="muted">Backlinks, links e menções por capítulo aparecem aqui.</p>}
-            {(index?.unresolved.length ?? 0) > 0 && <section><h4>Links sem nota <small>({new Set(index?.unresolved.map((u) => u.target)).size})</small></h4><ul>{[...new Set(index?.unresolved.map((u) => u.target))].slice(0, 12).map((target) => <li key={target}><button type="button" onClick={() => void createNote("nota", target)}>＋ {target}</button></li>)}</ul></section>}
+            {(index?.unresolved.length ?? 0) > 0 && <section><h3>Links sem nota <small>({new Set(index?.unresolved.map((u) => u.target)).size})</small></h3><ul>{[...new Set(index?.unresolved.map((u) => u.target))].slice(0, 12).map((target) => <li key={target}><button type="button" onClick={() => void createNote("nota", target)}>＋ {target}</button></li>)}</ul></section>}
           </aside>
         </div>}
 
@@ -254,7 +256,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
           </div>
           <aside className="record-detail">
             {!selectedRecord ? <p className="muted">Selecione um registro para ver todas as linhas em que ele aparece. O estado mostrado é <b>inferido</b> do texto (ex.: “resolvido”, “segue aberto”) e nunca é gravado nos seus arquivos.</p> : <>
-              <h4>{selectedRecord.id}{selectedRecord.keyed && <small className="muted"> · {selectedRecord.prefix}</small>}</h4>
+              <h3>{selectedRecord.id}{selectedRecord.keyed && <small className="muted"> · {selectedRecord.prefix}</small>}</h3>
               <p>{selectedRecord.status ? <i className={`status-badge ${selectedRecord.status}`}>{selectedRecord.status} (inferido)</i> : <span className="muted">estado não declarado</span>} · {selectedRecord.occurrences} linha(s)</p>
               {recordRows.map((row, i) => <div className="row-block" key={`${row.note}:${row.line}`}>
                 <small className="muted">{i === recordRows.length - 1 && recordRows.length > 1 ? "Mais recente · " : ""}{row.note}, linha {row.line}</small>
@@ -267,14 +269,14 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
 
         {!empty && tab === "graph" && <div className="graph-view">
           <div className="graph-filters">{kindOrder.map((kind) => { const count = notes.filter((note) => note.kind === kind).length; if (!count) return null; const off = hiddenKinds.has(kind); return <button key={kind} type="button" className={off ? "off" : ""} onClick={() => setHiddenKinds((current) => { const next = new Set(current); if (off) next.delete(kind); else next.add(kind); return next; })}><span className="kind-dot" style={{ background: kindInfo[kind].color }} />{kindInfo[kind].plural} ({count})</button>; })}</div>
-          <svg viewBox="0 0 900 600" role="img" aria-label="Grafo de notas">
+          <svg viewBox="0 0 900 600" role="group" aria-label="Grafo de notas">
             {graph.edges.map((edge) => { const a = graph.positions.get(edge.from); const b = graph.positions.get(edge.to); if (!a || !b) return null; const lit = !hover || (neighbors.has(edge.from) && neighbors.has(edge.to)); return <line key={`${edge.from}>${edge.to}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={lit ? "edge" : "edge dim"} />; })}
             {visibleNotes.map((note) => { const p = graph.positions.get(note.path); if (!p) return null; const r = 6 + Math.min(graph.degree.get(note.path) ?? 0, 10) * 1.4; const lit = !hover || neighbors.has(note.path); return <g key={note.path} className={`node ${lit ? "" : "dim"} ${note.path === selected ? "selected" : ""}`} transform={`translate(${p.x},${p.y})`} onMouseEnter={() => setHover(note.path)} onMouseLeave={() => setHover("")} onClick={() => void open(note.path)} tabIndex={0} role="button" aria-label={note.title} onKeyDown={(event) => { if (event.key === "Enter") void open(note.path); }}><circle r={r} fill={kindInfo[note.kind].color} /><text y={r + 12} textAnchor="middle">{note.title.length > 22 ? `${note.title.slice(0, 21)}…` : note.title}</text></g>; })}
           </svg>
           <p className="muted">{visibleNotes.length} notas · {graph.edges.length} ligações. Passe o mouse para destacar vizinhos; clique para abrir. Notas sem links ficam isoladas — ligue-as com <code>[[ ]]</code>.</p>
         </div>}
 
-        {!empty && tab === "timeline" && <div className="timeline-view">{timeline.length === 0 ? <p className="notebook-hint">A linha do tempo vem dos recaps dos capítulos. Gere o recap de um capítulo para começar.</p> : timeline.map((entry) => <section key={entry.chapter}><h4>{entry.chapter}</h4><div>{renderMarkdown(entry.events.map((event) => `- ${event}`).join("\n"), { ...mdLinks, onCreate: () => undefined })}</div></section>)}</div>}
+        {!empty && tab === "timeline" && <div className="timeline-view">{timeline.length === 0 ? <p className="notebook-hint">A linha do tempo vem dos recaps dos capítulos. Gere o recap de um capítulo para começar.</p> : timeline.map((entry) => <section key={entry.chapter}><h3>{entry.chapter}</h3><div>{renderMarkdown(entry.events.map((event) => `- ${event}`).join("\n"), { ...mdLinks, onCreate: () => undefined })}</div></section>)}</div>}
 
         {bibleOpen && <BibleDialog projectRoot={projectRoot} chapters={chapters} activeChapterIndex={activeChapterIndex} ai={ai} genre={genre} glossaryLines={glossaryLines} onClose={() => { setBibleOpen(false); void refresh(); }} onChanged={() => { void refresh(); onChanged(); }} />}
         {dataOpen && <ProjectDataDialog projectRoot={projectRoot} onClose={() => setDataOpen(false)} onChanged={() => { setSelected(""); setContent(""); setSaved(""); setRecordId(""); void refresh(); onChanged(); }} />}

@@ -4,14 +4,14 @@
 .glossary-tabs button.active { color: #0a6d83; border-bottom-color: #117b91; }
 .glossary-body { display: grid; gap: 10px; margin-top: 12px; }
 .glossary-body textarea { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #cedaea; border-radius: 8px; font: inherit; font-size: 13px; resize: vertical; color: #263955; background: #fff; }
-.glossary-hint { margin: 0; color: #718099; font-size: 11px; }
+.glossary-hint { margin: 0; color: #55657c; font-size: 11px; }
 .glossary-row { display: flex; align-items: center; gap: 8px; }
 .glossary-row input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid #cedaea; border-radius: 8px; font: inherit; font-size: 12px; color: #263955; background: #fff; }
 .character-card { padding: 10px 12px; border: 1px solid #e0e8f2; border-radius: 10px; }
 .candidate-box { padding: 10px 12px; border: 1px solid #d8e2ef; border-radius: 10px; background: #f7fafd; font-size: 12px; }
 .candidate-box ul { max-height: 190px; margin: 6px 0; padding: 0; overflow-y: auto; list-style: none; columns: 2; }
 .candidate-box li { break-inside: avoid; margin: 3px 0; }
-.candidate-box small { color: #7b8aa0; }
+.candidate-box small { color: #55657c; }
 .candidate-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .app-night .glossary-tabs { border-color: #2d3d4d; }
 .app-night .candidate-box, .app-night .character-card { border-color: #2d3d4d; background: #162433; }

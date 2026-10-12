@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { vaultApplyRecap, type Recap, type RecapChange } from "./notebookApi";
 import "../settings/AiSettingsDialog.css";
 import "./Notebook.css";
+import { useDialogA11y } from "../../shared/useDialogA11y";
 
 export interface AiConfig { providerId: string; model: string; reasoningEffort: string | null; ready: boolean; }
 
@@ -23,7 +24,7 @@ type Progress = { elapsedMs: number; answerChars: number; phase: "waiting" | "th
 
 function ListEditor({ title, items, render, onRemove }: { title: string; items: unknown[]; render: (index: number) => ReactNode; onRemove: (index: number) => void }) {
   if (!items.length) return null;
-  return <div className="recap-group"><h4>{title} <small>({items.length})</small></h4>{items.map((_, index) => <div className="recap-item" key={index}>{render(index)}<button type="button" className="discard-button" aria-label="Remover item" onClick={() => onRemove(index)}>×</button></div>)}</div>;
+  return <div className="recap-group"><h3>{title} <small>({items.length})</small></h3>{items.map((_, index) => <div className="recap-item" key={index}>{render(index)}<button type="button" className="discard-button" aria-label="Remover item" onClick={() => onRemove(index)}>×</button></div>)}</div>;
 }
 
 export function RecapDialog({ projectRoot, chapterName, chapterLines, order, ai, genre, glossary, onClose, onSaved }: RecapDialogProps) {
@@ -58,9 +59,10 @@ export function RecapDialog({ projectRoot, chapterName, chapterLines, order, ai,
   const setItem = <K extends "timeline" | "characters" | "places" | "threads_open" | "threads_closed">(key: K, index: number, patch: Partial<Recap[K][number]>) => update((current) => ({ ...current, [key]: (current[key] as object[]).map((item, i) => (i === index ? { ...item, ...patch } : item)) }) as Recap);
   const setText = (key: "facts" | "alerts", index: number, value: string) => update((current) => ({ ...current, [key]: current[key].map((item, i) => (i === index ? value : item)) }));
 
+  const dialogRef = useDialogA11y<HTMLElement>(onClose);
   return (
     <div className="settings-backdrop recap-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="settings-dialog recap-dialog" role="dialog" aria-modal="true" aria-labelledby="recap-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="settings-dialog recap-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="recap-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="settings-title-row"><div><span className="eyebrow">MEMÓRIA DO LIVRO</span><h2 id="recap-title">LOG-RECAP — {chapterName}</h2></div><button className="dialog-close" type="button" onClick={onClose} aria-label="Fechar">×</button></div>
         {!recap && !changes && <>
           <p className="settings-description">A IA lê o capítulo e propõe o resumo, a linha do tempo, o estado dos personagens, os fios abertos/fechados e os fatos estabelecidos. <b>Nada é gravado até você revisar e confirmar.</b> Personagens, lugares e fios novos viram notas no caderno, ligadas por [[links]].</p>

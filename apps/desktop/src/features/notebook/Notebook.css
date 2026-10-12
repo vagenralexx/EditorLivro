@@ -14,7 +14,7 @@
 .new-note div { display: flex; gap: 6px; }
 .notebook-groups details { margin-top: 4px; }
 .notebook-groups summary { cursor: pointer; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #5b6b82; }
-.notebook-groups summary small, .notebook-side h4 small { color: #8b99ad; font-weight: 600; }
+.notebook-groups summary small, .notebook-side h3 small { color: #55657c; font-weight: 600; }
 .notebook-groups ul, .notebook-side ul { margin: 4px 0 0; padding: 0; list-style: none; }
 .notebook-groups li button, .notebook-side li button { width: 100%; padding: 5px 8px; border: 0; border-radius: 6px; color: #2b3b55; background: none; font: inherit; font-size: 12px; text-align: left; }
 .notebook-groups li button:hover, .notebook-side li button:hover { background: #e8f1f8; }
@@ -24,7 +24,7 @@
 .notebook-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px 16px; border: 1px solid #e0e8f2; border-radius: 12px; overflow: hidden; }
 .note-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding-bottom: 8px; border-bottom: 1px solid #e6edf5; }
 .note-head h3 { margin: 0; font-size: 17px; }
-.note-head small { color: #7b8aa0; }
+.note-head small { color: #55657c; }
 .note-head form { display: flex; gap: 6px; flex: 1; }
 .note-tools { display: flex; gap: 4px; margin-left: auto; }
 .note-tools button { padding: 5px 10px; border: 1px solid #d8e2ef; border-radius: 7px; color: #42516a; background: #fff; font: inherit; font-size: 11px; font-weight: 700; }
@@ -32,7 +32,7 @@
 .note-tools button.danger { color: #fff; background: #b4414f; border-color: #b4414f; }
 .note-editor { display: flex; flex: 1; flex-direction: column; min-height: 0; margin-top: 10px; }
 .note-editor textarea { flex: 1; min-height: 0; padding: 12px; border: 1px solid #cedaea; border-radius: 10px; color: #263955; background: #fff; font: 13px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace; resize: none; }
-.note-help { margin-top: 6px; color: #8b99ad; font-size: 10px; }
+.note-help { margin-top: 6px; color: #55657c; font-size: 10px; }
 .link-suggestions { position: absolute; z-index: 3; margin: 0; padding: 4px; list-style: none; border: 1px solid #cedaea; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgba(19, 33, 56, .18); }
 .link-suggestions button { display: block; width: 100%; padding: 5px 10px; border: 0; background: none; font: inherit; font-size: 12px; text-align: left; }
 .note-editor { position: relative; }
@@ -43,8 +43,8 @@
 .note-preview code, .notebook code { padding: 1px 4px; border-radius: 4px; background: #eef3f8; font-size: .92em; }
 .wikilink { color: #0a6d83; text-decoration: none; border-bottom: 1px dotted #0a6d83; }
 .wikilink.broken { color: #a3404d; border-bottom-color: #a3404d; }
-.notebook-hint, .muted { color: #7b8aa0; font-size: 12px; }
-.notebook-side h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #5b6b82; }
+.notebook-hint, .muted { color: #55657c; font-size: 12px; }
+.notebook-side h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #5b6b82; }
 .notebook-side section { padding-bottom: 8px; border-bottom: 1px solid #e6edf5; }
 .notebook-side li span { color: #42516a; }
 .broken-note { color: #a3404d; }
@@ -65,12 +65,12 @@
 .graph-view .node.dim { opacity: .18; }
 .timeline-view { flex: 1; min-height: 0; margin-top: 10px; overflow-y: auto; }
 .timeline-view section { padding: 8px 0 8px 14px; border-left: 3px solid #cfe0ea; }
-.timeline-view h4 { margin: 0 0 4px; font-size: 13px; }
+.timeline-view h3 { margin: 0 0 4px; font-size: 13px; }
 .recap-backdrop { z-index: 30; }
 .recap-dialog { width: min(100%, 720px); max-height: calc(100vh - 36px); overflow-y: auto; }
 .recap-body { margin-top: 10px; }
 .recap-body textarea { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #cedaea; border-radius: 8px; font: inherit; font-size: 13px; resize: vertical; }
-.recap-group h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #5b6b82; }
+.recap-group h3 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #5b6b82; }
 .recap-item { display: flex; gap: 6px; margin: 4px 0; }
 .recap-item input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid #cedaea; border-radius: 7px; font: inherit; font-size: 12px; }
 .recap-item input.short { flex: 0 0 30%; }
@@ -95,7 +95,7 @@
 .pd-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid #e0e8f2; border-radius: 9px; }
 .pd-actions { justify-content: flex-start; margin-top: 8px; }
 .pd-mapping table { width: 100%; margin: 6px 0; border-collapse: collapse; font-size: 12px; }
-.pd-mapping th { text-align: left; color: #718099; font-size: 10px; letter-spacing: .08em; }
+.pd-mapping th { text-align: left; color: #55657c; font-size: 10px; letter-spacing: .08em; }
 .pd-mapping td { padding: 3px 4px; }
 .pd-mapping select { padding: 5px 8px; border: 1px solid #cedaea; border-radius: 7px; font: inherit; font-size: 12px; }
 .pd-confirm { display: flex; align-items: center; gap: 6px; font-size: 11px; }
@@ -119,9 +119,9 @@
 .status-badge.aberto { color: #8a4b00; background: #ffecd0; }
 .status-badge.resolvido { color: #1f6b4a; background: #dff3e8; }
 .status-badge.supersedido { color: #5b6b82; background: #e8edf3; }
-.record-detail h4 { margin: 0 0 4px; font-size: 14px; }
+.record-detail h3 { margin: 0 0 4px; font-size: 14px; }
 .record-detail dl { margin: 8px 0; display: grid; gap: 6px; }
-.record-detail dt { color: #718099; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.record-detail dt { color: #55657c; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .record-detail dd { margin: 0; overflow-wrap: anywhere; }
 .record-detail .row-block { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e0e8f2; }
 .status-badge { font-style: normal; }
@@ -134,18 +134,18 @@
 .bible-levels label { display: grid; gap: 3px; padding: 10px; border: 1px solid #d8e2ef; border-radius: 10px; cursor: pointer; font-size: 12px; }
 .bible-levels label.active { border-color: #117b91; background: #eaf6f9; }
 .bible-levels input { position: absolute; opacity: 0; pointer-events: none; }
-.bible-levels small { color: #6b7a90; line-height: 1.35; }
+.bible-levels small { color: #55657c; line-height: 1.35; }
 .bible-grid { display: grid; flex: 1; min-height: 0; margin-top: 12px; gap: 12px; grid-template-columns: 280px minmax(0, 1fr); }
 .bible-sections ul { margin: 4px 0 0; padding: 0; list-style: none; }
 .bible-sections li button { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; color: #2b3b55; background: none; font: inherit; font-size: 12px; text-align: left; }
 .bible-sections li button:hover { background: #e8f1f8; }
 .bible-sections li button.active { color: #0a6d83; background: #dcf0f5; font-weight: 700; }
-.bible-sections h4 { margin: 10px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #5b6b82; }
+.bible-sections h3 { margin: 10px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #5b6b82; }
 .canon-chip { flex: none; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-style: normal; font-weight: 800; color: #5b6b82; background: #e8edf3; }
 .canon-chip.confirmado { color: #1f6b4a; background: #dff3e8; }
 .canon-chip.proposto { color: #6a4bb0; background: #ece6fa; }
 .canon-chip.aberto { color: #8a4b00; background: #ffecd0; }
-.canon-chip.vazia { color: #98a4b6; background: #f1f4f8; }
+.canon-chip.vazia { color: #55657c; background: #f1f4f8; }
 .bible-main { overflow-y: auto; gap: 8px; }
 .bible-guide { padding: 8px 10px; border: 1px solid #e0e8f2; border-radius: 10px; background: #f9fbfd; font-size: 12px; line-height: 1.45; }
 .bible-guide p { margin: 2px 0; }
@@ -158,3 +158,15 @@
 .bible-proposal textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #b9a6e6; border-radius: 10px; font: 12.5px/1.5 ui-monospace, Menlo, Consolas, monospace; }
 .record-item.keyed { grid-template-columns: minmax(90px, 210px) minmax(0, 1fr) auto; }
 .record-item.keyed b { font-family: inherit; font-size: 12px; }
+
+/* Caderno e Bíblia no modo noturno: textos secundários e abas com contraste sobre o fundo escuro. */
+.app-night .notebook :is(.muted, small, .notebook-hint, .note-help, .eyebrow, summary, .notebook-groups summary, .notebook-side h3, .record-detail dt, .records-filters button, .canon-chip, .status-badge) { color: #aebdd0; }
+.app-night .notebook .notebook-tabs button { color: #aebdd0; }
+.app-night .notebook .notebook-tabs button.active { color: #7bd7e6; border-bottom-color: #7bd7e6; }
+.app-night .notebook .records-filters button.active { color: #0b1620; background: #7bd7e6; border-color: #7bd7e6; }
+.app-night .notebook :is(.notebook-list button, .notebook-side button, .record-item) { color: #d3dfeb; }
+.app-night .notebook .record-item.active, .app-night .notebook .notebook-groups li button.active { color: #7bd7e6; background: #213447; }
+.app-night .notebook :is(.bible-guide, .bible-ai, .bible-proposal textarea, .bible-text, .records-list, .record-detail) { color: #d3dfeb; background: #182534; border-color: #2d3d4d; }
+.app-night .notebook .md-table th { color: #d3dfeb; background: #1f3042; }
+.app-night .notebook .md-table th, .app-night .notebook .md-table td { border-color: #2d3d4d; }
+.app-night .notebook .rp-sample del, .app-night .notebook .kind-dot { opacity: 1; }

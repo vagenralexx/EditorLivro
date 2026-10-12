@@ -4,12 +4,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { join } from "@tauri-apps/api/path";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { emptyRecord, friendlyModelName, providerFor, providerIds, providers, type ProviderId } from "../ai/providers";
 import { paragraphTextFromXhtml, textFromXhtml } from "../editor/xhtmlDocument";
 import { VisualXhtmlEditor, type PaginationState, type ReaderTheme } from "../editor/VisualXhtmlEditor";
 import type { EditorialProfileId } from "../editorial/catalog";
 import { isProjectBroken, loadProject, patchProject, toStoredPath } from "../project/projectStore";
+import { useDialogA11y } from "../../shared/useDialogA11y";
 import { ReferencesPanel } from "../references/ReferencesPanel";
 import { ReplaceDialog } from "../replace/ReplaceDialog";
 import { samePath } from "../replace/replaceApi";
@@ -98,6 +99,12 @@ async function collectXhtmlFiles(directory: string): Promise<ProjectDocument[]> 
 function fileNameFromPath(path: string) {
   const parts = path.split(/[\\/]/u).filter(Boolean);
   return parts[parts.length - 1] ?? path;
+}
+
+/** Pergunta "salvar antes de trocar de capítulo?": Esc cancela, Tab fica preso no diálogo. */
+function PendingDocumentModal({ onCancel, busy, children }: { onCancel: () => void; busy: boolean; children: ReactNode }) {
+  const ref = useDialogA11y<HTMLElement>(() => { if (!busy) onCancel(); });
+  return <div className="transition-modal-backdrop" role="presentation"><section ref={ref} tabIndex={-1} className="transition-modal" role="dialog" aria-modal="true" aria-labelledby="save-changes-title">{children}</section></div>;
 }
 
 export function WorkspaceDashboard() {
@@ -365,6 +372,26 @@ export function WorkspaceDashboard() {
     }
   }, [activeDocument, editorText, projectRoot, savedText]);
 
+  // Atalhos: Alt+R referências, Alt+H substituir no livro, Alt+N caderno (Alt+setas já viram página).
+  const shortcutRef = useRef<{ references: () => void; replace: () => void; notebook: () => void }>({ references: () => undefined, replace: () => undefined, notebook: () => undefined });
+  shortcutRef.current = {
+    references: () => { if (projectRoot && activeDocument) setIsReferencesOpen((open) => !open); },
+    replace: () => { if (projectRoot && documents.length > 0) void openReplace(); },
+    notebook: () => { if (projectRoot) { setNotebookStart(""); setIsNotebookOpen(true); } },
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const key = event.key.toLowerCase();
+      const action = key === "r" ? "references" : key === "h" ? "replace" : key === "n" ? "notebook" : null;
+      if (!action || (action !== "references" && document.querySelector("[role=dialog][aria-modal=true]"))) return;
+      event.preventDefault();
+      shortcutRef.current[action]();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // Fechar a janela com alterações não salvas: pergunta em vez de perder o trabalho.
   const unsavedRef = useRef(false);
   unsavedRef.current = Boolean(activeDocument) && editorText !== savedText;
@@ -444,8 +471,8 @@ export function WorkspaceDashboard() {
   return (
     <main className={`workspace-shell ${isAppDark ? "app-night" : ""}`}>
       <header className="topbar">
-        <div className="brand"><img src="/editor-livros-epub.png" alt="" className="brand-icon" /><div><strong>Editor de Livros EPUB</strong><span>Local-first · XHTML · EPUB</span></div></div>
-        <div className="topbar-actions"><button className="secondary-button" type="button" onClick={() => setIsReferencesOpen((open) => !open)} disabled={!projectRoot || !activeDocument} aria-pressed={isReferencesOpen} title="Mostra, para os nomes citados nesta página, a ficha, ligações, registros e bíblia do caderno">Referências</button><button className="secondary-button" type="button" onClick={() => { setNotebookStart(""); setIsNotebookOpen(true); }} disabled={!projectRoot} title={projectRoot ? "Memória entre capítulos: personagens, lugares, fios e recaps" : "Abra um projeto"}>Caderno</button><button className="secondary-button" type="button" onClick={() => setIsExportOpen(true)} disabled={!projectRoot} title={projectRoot ? "Gerar o arquivo .epub final" : "Abra um projeto para exportar"}>Exportar EPUB</button><button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurações</button><button className="primary-button" type="button" onClick={openProject} disabled={isOpening}>{isOpening ? "Abrindo…" : "Abrir projeto"}</button></div>
+        <div className="brand"><img src="/editor-livros-epub.png" alt="" className="brand-icon" /><div><h1 className="brand-title">Editor de Livros EPUB</h1><span>Local-first · XHTML · EPUB</span></div></div>
+        <div className="topbar-actions"><button className="secondary-button" type="button" onClick={() => setIsReferencesOpen((open) => !open)} disabled={!projectRoot || !activeDocument} aria-pressed={isReferencesOpen} title="Para os nomes citados nesta página: ficha, ligações, registros e bíblia do caderno (Alt+R)">Referências</button><button className="secondary-button" type="button" onClick={() => { setNotebookStart(""); setIsNotebookOpen(true); }} disabled={!projectRoot} title={projectRoot ? "(Alt+N) Memória entre capítulos: personagens, lugares, fios e recaps" : "Abra um projeto"}>Caderno</button><button className="secondary-button" type="button" onClick={() => setIsExportOpen(true)} disabled={!projectRoot} title={projectRoot ? "Gerar o arquivo .epub final" : "Abra um projeto para exportar"}>Exportar EPUB</button><button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurações</button><button className="primary-button" type="button" onClick={openProject} disabled={isOpening}>{isOpening ? "Abrindo…" : "Abrir projeto"}</button></div>
       </header>
       <div className={isSplit ? "workspace-grid split-mode" : "workspace-grid"}>
         <aside className="library-panel" aria-label="Biblioteca do projeto">
@@ -492,7 +519,7 @@ export function WorkspaceDashboard() {
             <label className="check"><input type="checkbox" checked={projectSettings.useMemory} onChange={(event) => setProjectSettings((current) => ({ ...current, useMemory: event.target.checked }))} /><span>Usar a memória do caderno nas análises que a pedem</span></label>
             <label className="check"><input type="checkbox" checked={projectSettings.adultContent} onChange={(event) => setProjectSettings((current) => ({ ...current, adultContent: event.target.checked }))} /><span>Contém cenas adultas (preservar intensidade, sem suavizar)</span></label>
             {glossary.length > 0 && <p className="glossary-chip">✓ glossário com {glossary.length} entradas enviado à IA</p>}
-            <button className="secondary-button" type="button" disabled={!projectRoot || documents.length === 0} onClick={() => void openReplace()} title="Troca palavras inteiras (ex.: nome de personagem) com prévia e desfazer">Substituir no livro…</button>
+            <button className="secondary-button" type="button" disabled={!projectRoot || documents.length === 0} onClick={() => void openReplace()} title="Troca palavras inteiras (ex.: nome de personagem) com prévia e desfazer (Alt+H)">Substituir no livro…</button>
             <button className="secondary-button" type="button" disabled={!projectRoot} onClick={() => setIsGlossaryOpen(true)}>{glossary.length > 0 ? "Editar glossário…" : "Criar glossário…"}</button>
           </div>
           <button className="primary-button wide-button" type="button" onClick={analyzeDocument} disabled={isAnalyzing || !activeDocument}>{isAnalyzing ? (scope === "chapter" ? "Analisando capítulo…" : `Analisando página ${pagination.page}…`) : (scope === "chapter" ? "Analisar capítulo" : `Analisar página ${pagination.page}`)}</button>{isAnalyzing && <div className="analysis-progress" role="status" aria-live="polite"><span>{progressLabel(aiProgress)}</span><button type="button" className="discard-button" onClick={() => void invoke("cancel_ai_analysis")}>Cancelar</button></div>}<p className="privacy-note">Apenas o trecho analisado (página ou capítulo, conforme o escopo) é enviado ao provedor escolhido. A chave nunca entra no XHTML ou EPUB.</p>
@@ -508,7 +535,7 @@ export function WorkspaceDashboard() {
       {isReplaceOpen && <ReplaceDialog initialFind={replaceStart} projectRoot={projectRoot} chapters={documents} activeChapterIndex={Math.max(activeIndex, 0)} onClose={() => { setIsReplaceOpen(false); setReplaceStart(""); }} onChapterFilesChanged={onChapterFilesChanged} onVaultChanged={() => { setMemoryNote(""); glossaryLoad(projectRoot).then((state) => { setGlossary(glossaryToLines(state.glossary)); setGlossaryData(state.glossary); }).catch(() => undefined); }} />}
       {isGlossaryOpen && <GlossaryDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} onClose={() => setIsGlossaryOpen(false)} onSaved={(saved: Glossary) => { setGlossary(glossaryToLines(saved)); setGlossaryData(saved); }} />}
       {isExportOpen && <ExportEpubDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} hasUnsavedChanges={Boolean(activeDocument) && editorText !== savedText} onClose={() => setIsExportOpen(false)} />}
-      {pendingDocument && <div className="transition-modal-backdrop" role="presentation"><section className="transition-modal" role="dialog" aria-modal="true" aria-labelledby="save-changes-title"><span className="transition-icon">✦</span><div><span className="eyebrow">ALTERAÇÕES PENDENTES</span><h2 id="save-changes-title">Salvar edições e continuar?</h2><p>Você editou <strong>{activeDocument?.name}</strong>. O próximo capítulo será aberto somente depois de salvar ou descartar estas alterações.</p></div><div className="transition-actions"><button type="button" className="secondary-button" onClick={() => setPendingDocument(null)} disabled={isSaving}>Cancelar</button><button type="button" className="discard-button" onClick={discardAndContinue} disabled={isSaving}>Descartar e continuar</button><button type="button" className="primary-button" onClick={() => void saveAndContinue()} disabled={isSaving}>{isSaving ? "Salvando…" : "Salvar edições e continuar"}</button></div><small>Um backup do XHTML atual é criado automaticamente.</small></section></div>}
+      {pendingDocument && <PendingDocumentModal onCancel={() => setPendingDocument(null)} busy={isSaving}><span className="transition-icon">✦</span><div><span className="eyebrow">ALTERAÇÕES PENDENTES</span><h2 id="save-changes-title">Salvar edições e continuar?</h2><p>Você editou <strong>{activeDocument?.name}</strong>. O próximo capítulo será aberto somente depois de salvar ou descartar estas alterações.</p></div><div className="transition-actions"><button type="button" className="secondary-button" onClick={() => setPendingDocument(null)} disabled={isSaving}>Cancelar</button><button type="button" className="discard-button" onClick={discardAndContinue} disabled={isSaving}>Descartar e continuar</button><button type="button" className="primary-button" onClick={() => void saveAndContinue()} disabled={isSaving}>{isSaving ? "Salvando…" : "Salvar edições e continuar"}</button></div><small>Um backup do XHTML atual é criado automaticamente.</small></PendingDocumentModal>}
     </main>
   );
 }

@@ -103,6 +103,18 @@ Aprendido com as fichas/índices enviados: `Indice.md`, `Matriz-*` e `Mapa-*` de
 - **Fechar a janela com alterações não salvas** pergunta: salvar e sair / sair sem salvar / continuar editando.
 - **Botão "Analisar" fixo** no rodapé do painel do assistente (ficava abaixo da dobra em telas de 768–900 px).
 
+## Revisão de UI/UX e fluxo de trabalho (round 8)
+
+Auditoria com **axe-core** (WCAG 2.1 A/AA + boas práticas) em cada tela e diálogo, em modo claro e noturno, mais teste de teclado. De **4 tipos de violação (≈100 elementos)** em várias telas para **0**.
+
+- **Contraste:** ~40 cores de texto cinza-claro (3:1) viraram AA (≥4.5:1); modo noturno recebeu sobrescritas próprias (painéis, Caderno e Bíblia). Textos de 8–9 px subiram para 10 px.
+- **Diálogos** (`shared/useDialogA11y.ts`, usado em todos): foco inicial dentro, **Tab preso** no diálogo (grupo de rádio = uma parada), **Esc** fecha (o mesmo manipulador do ×, com confirmação quando há texto não salvo), foco **volta** ao botão que abriu; diálogos aninhados (recap dentro do Caderno) respondem só o do topo.
+- **Estrutura:** `h1` na marca, níveis de título sem saltos, um único `main`, `aside` com nome, SVG do grafo sem controles aninhados, diálogo de configurações deixou de ser `form role=dialog`.
+- **Foco visível** global e `prefers-reduced-motion`.
+- **Robustez:** `ErrorBoundary` na raiz (tela explicativa em vez de tela branca; nenhum arquivo é tocado).
+- **Fluxo:** atalhos **Alt+R** (referências), **Alt+H** (substituir no livro), **Alt+N** (caderno); painel de referências abre abaixo da barra superior, sem esconder os botões; registros por nome (Mapa de Âncoras, Matriz de Relações, Verificação de Pontas Soltas, 42 itens nos arquivos do autor) na aba Registros.
+- **Janela:** largura mínima do app é 1080 px (desktop), então 320/768 px da checklist não se aplicam; verificado em 1080, 1366 e 1440 px, sem rolagem horizontal.
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.

@@ -5,6 +5,7 @@ import { bibleAiDraft, bibleCatalog, bibleCreate, bibleList, bibleRead, bibleWri
 import type { AiConfig } from "./RecapDialog";
 import "../settings/AiSettingsDialog.css";
 import "./Notebook.css";
+import { useDialogA11y } from "../../shared/useDialogA11y";
 
 interface BibleDialogProps {
   projectRoot: string;
@@ -118,13 +119,15 @@ export function BibleDialog({ projectRoot, chapters, activeChapterIndex, ai, gen
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
   }
 
+  const requestClose = () => { if (!dirty || window.confirm("Descartar alterações não salvas?")) onClose(); };
+  const dialogRef = useDialogA11y<HTMLElement>(requestClose);
   const aiBusy = busy.startsWith("ia");
   const blockInfo = busy.startsWith("ia ") ? ` — bloco ${busy.slice(3)}` : "";
   const progressText = progress ? (progress.phase === "writing" ? `Escrevendo… ${progress.answerChars} caracteres · ${Math.round(progress.elapsedMs / 1000)} s` : progress.phase === "thinking" ? `Modelo raciocinando… ${Math.round(progress.elapsedMs / 1000)} s` : `Aguardando o servidor… ${Math.round(progress.elapsedMs / 1000)} s`) : "Enviando ao servidor…";
 
   return (
     <div className="settings-backdrop notebook-backdrop" role="presentation" onMouseDown={() => { if (!dirty) onClose(); }}>
-      <section className="notebook bible" role="dialog" aria-modal="true" aria-labelledby="bible-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="notebook bible" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="bible-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="notebook-header">
           <div><span className="eyebrow">CONTINUIDADE EM NÍVEIS</span><h2 id="bible-title">Bíblia</h2></div>
           <div className="bible-picker">
@@ -150,13 +153,13 @@ export function BibleDialog({ projectRoot, chapters, activeChapterIndex, ai, gen
           <div className="empty-actions"><button className="primary-button" type="button" onClick={() => setCreating({ level: "livro", title: "", book: "" })}>Criar a primeira bíblia</button></div></div>}
 
         {!creating && doc && <div className="bible-grid">
-          <aside className="notebook-list bible-sections">
+          <aside className="notebook-list bible-sections" aria-label="Seções da bíblia">
             <small className="muted">{levelInfo[doc.level].label}{doc.book ? ` · ${doc.book}` : ""} · {doc.path}</small>
             <ul>{doc.sections.map((s) => <li key={s.title}><button type="button" className={s.title === selected ? "active" : ""} onClick={() => void select(s.title)}>{s.title}<i className={`canon-chip ${statusLabel(s)}`}>{statusLabel(s)}</i></button></li>)}</ul>
-            {missing.length > 0 && <><h4>Seções que faltam</h4><ul>{missing.map((m) => <li key={m.id}><button type="button" className={selected === `id:${m.id}` ? "active" : ""} onClick={() => void select(`id:${m.id}`)}>＋ {m.title}</button></li>)}</ul></>}
+            {missing.length > 0 && <><h3>Seções que faltam</h3><ul>{missing.map((m) => <li key={m.id}><button type="button" className={selected === `id:${m.id}` ? "active" : ""} onClick={() => void select(`id:${m.id}`)}>＋ {m.title}</button></li>)}</ul></>}
           </aside>
 
-          <main className="notebook-main bible-main">
+          <div className="notebook-main bible-main">
             {!sectionTitle ? <p className="notebook-hint">Escolha uma seção à esquerda.</p> : <>
               <div className="note-head"><h3>{sectionTitle}</h3><small>{section ? statusLabel(section) : "ainda não existe no arquivo"}{dirty ? " · alterações não salvas" : ""}</small></div>
               {spec ? <div className="bible-guide"><p><b>Para que serve:</b> {spec.purpose}</p><p><b>Formato:</b> {spec.format}</p><details><summary>Perguntas para guiar o preenchimento</summary><ul>{spec.questions.map((q) => <li key={q}>{q}</li>)}</ul></details></div> : <p className="muted">Seção livre do autor — o app só edita o corpo desta seção, sem tocar no resto do arquivo.</p>}
@@ -180,7 +183,7 @@ export function BibleDialog({ projectRoot, chapters, activeChapterIndex, ai, gen
                   <div className="settings-actions"><button className="secondary-button" type="button" onClick={() => setProposal(null)}>Descartar</button><button className="secondary-button" type="button" onClick={() => { setText(proposal); setProposal(null); }}>Levar para o editor (sem gravar)</button><button className="primary-button" type="button" disabled={busy !== "" || !proposal.trim()} onClick={() => void write(proposal, "proposto", "Proposta aplicada como #canon/proposto. Revise e confirme.")}>Aplicar como proposta</button></div></div>}
               </details>
             </>}
-          </main>
+          </div>
         </div>}
       </section>
     </div>
