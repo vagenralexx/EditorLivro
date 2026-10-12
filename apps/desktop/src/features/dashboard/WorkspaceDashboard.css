@@ -30,3 +30,18 @@
 .app-night .chapter-button.active .chapter-index { color: #7bd7e6; }
 .app-night .glossary-chip { color: #6fd3a8; }
 .app-night :is(.scan-title > span, .module-row > strong) { color: #aebdd0; }
+
+/* Ferramentas do livro na barra lateral (antes espalhadas entre a barra superior e o cartão de projeto). */
+.library-panel { overflow-y: auto; }
+.book-tools { display: grid; gap: 4px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #d8dee8; }
+.tools-heading { margin-bottom: 2px; color: #55657c; font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+.book-tools button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; color: #2b3b55; background: none; font: inherit; font-size: 12px; font-weight: 650; text-align: left; }
+.book-tools button:hover:not(:disabled) { border-color: #cdd6e2; background: #fff; }
+.book-tools button[aria-pressed="true"] { color: #0a6d83; border-color: #b8d6dd; background: #eaf6f9; }
+.book-tools button:disabled { cursor: not-allowed; opacity: .45; }
+.book-tools kbd { color: #55657c; font: 10px "Cascadia Code", Consolas, monospace; }
+.app-night .book-tools { border-top-color: #2d3d4d; }
+.app-night .book-tools :is(.tools-heading, kbd) { color: #aebdd0; }
+.app-night .book-tools button { color: #d3dfeb; }
+.app-night .book-tools button:hover:not(:disabled) { border-color: #3b5063; background: #1b2a3a; }
+.app-night .book-tools button[aria-pressed="true"] { color: #7bd7e6; border-color: #2f6f80; background: #173443; }

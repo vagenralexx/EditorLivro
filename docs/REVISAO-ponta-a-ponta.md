@@ -112,6 +112,7 @@ Auditoria com **axe-core** (WCAG 2.1 A/AA + boas práticas) em cada tela e diál
 - **Estrutura:** `h1` na marca, níveis de título sem saltos, um único `main`, `aside` com nome, SVG do grafo sem controles aninhados, diálogo de configurações deixou de ser `form role=dialog`.
 - **Foco visível** global e `prefers-reduced-motion`.
 - **Robustez:** `ErrorBoundary` na raiz (tela explicativa em vez de tela branca; nenhum arquivo é tocado).
+- **Ferramentas do livro** (Referências, Caderno, Bíblia, Substituir, Glossário, Exportar) agrupadas na barra lateral esquerda; a barra superior ficou só com Configurações e Abrir projeto; a Bíblia abre direto dali.
 - **Fluxo:** atalhos **Alt+R** (referências), **Alt+H** (substituir no livro), **Alt+N** (caderno); painel de referências abre abaixo da barra superior, sem esconder os botões; registros por nome (Mapa de Âncoras, Matriz de Relações, Verificação de Pontas Soltas, 42 itens nos arquivos do autor) na aba Registros.
 - **Janela:** largura mínima do app é 1080 px (desktop), então 320/768 px da checklist não se aplicam; verificado em 1080, 1366 e 1440 px, sem rolagem horizontal.
 
