@@ -129,6 +129,19 @@ Auditoria com **axe-core** (WCAG 2.1 A/AA + boas práticas) em cada tela e diál
 
 Rede de segurança: se o servidor responder 400/422 citando `reasoning`, `reasoning_effort` ou `thinking`, o app repete a chamada **uma vez** sem esses parâmetros (como já fazia com o modo JSON). Outros modelos da Groq (ex.: Llama) e demais provedores continuam sem parâmetro de esforço.
 
+## Primeiro teste no Windows (round 10)
+
+Achados do teste real e correções:
+
+- **Prévia Kindle → Editar deixava o texto cortado nas duas bordas.** Causa: a largura da coluna muda entre os modos, mas o scroll horizontal ficava no mesmo pixel (meio de uma página). Agora a página atual é guardada e o scroll é realinhado ao novo passo; verificado em 1100, 1366, 1440 e 1920 px, indo e voltando.
+- **Salvar no Caderno:** botão "Salvar" visível, estado "✓ salvo / alterações ainda não salvas" e **Ctrl+S**; o salvamento automático (1 s após parar de digitar) continua.
+- **Lista do Caderno:** só o grupo da nota aberta fica expandido (ou os que têm resultado da busca); os demais começam recolhidos.
+- **Registros:** com o vault real eram **1618** itens misturando IDs e linhas de tabelas. Agora há duas visões: *Com ID* e *Tabelas por nome*, com filtros próprios e limite de 300 itens na lista (use busca/filtros).
+- **Índices não são bíblias/personagens/registros:** `Indice*`, `README`, `MOC`, `Sumário` viram nota comum em qualquer pasta (o `01-Biblias/Indice.md` aparecia como bíblia); `Matriz*`/`Mapa*`/`Quadro*` em pastas de personagens/bíblias viram Registro.
+- **Bíblia:** "Seções que faltam" fica recolhida (abre sozinha ao escolher uma delas).
+- **Tema escuro de ponta a ponta:** diálogos (configurações, exportar, glossário, substituir, dados do projeto), painel de referências, Caderno e Bíblia agora seguem o tema (antes eram claros no meio de um app escuro, e a seleção da Bíblia ficava ilegível). axe-core: 0 violações em claro e escuro.
+- **Foco do teclado:** o ciclo do Tab dentro dos diálogos é feito à mão (o Chrome inclui áreas roláveis e `<summary>` na ordem e o foco escapava).
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.

@@ -1,0 +1,50 @@
+/* Tema escuro dos diálogos e painéis laterais. Os do Caderno/Bíblia estão em Notebook.css.
+   Paleta: fundo #14202d · superfície #182534 · campo #1b2a3a · borda #2d3d4d/#3b5063 · texto #d3dfeb · apoio #aebdd0 · destaque #7bd7e6. */
+.app-night .settings-dialog, .app-night .refs-panel { color: #d3dfeb; background: #14202d; border-color: #2d3d4d; box-shadow: 0 24px 80px rgba(0, 0, 0, .55); }
+.app-night .settings-dialog :is(h2, h3, h4, strong, b), .app-night .refs-panel :is(h2, h3, h4, strong, b) { color: #e6eef7; }
+.app-night .settings-dialog :is(.settings-description, .muted, small, .key-status, .key-hint, label small), .app-night .refs-panel :is(.muted, small) { color: #aebdd0; }
+.app-night .settings-field { color: #aebdd0; }
+.app-night .settings-dialog :is(input:not([type=checkbox]):not([type=radio]), select, textarea), .app-night .refs-panel :is(input, select) { color: #d3dfeb; background: #1b2a3a; border-color: #3b5063; }
+.app-night .settings-dialog ::placeholder { color: #8fa1b6; }
+.app-night .settings-field input:focus, .app-night .settings-field select:focus { outline-color: #7bd7e6; border-color: #7bd7e6; }
+.app-night .dialog-close { color: #d3dfeb; background: #223243; }
+.app-night :is(.settings-dialog, .refs-panel) .secondary-button { color: #d3dfeb; background: #1b2a3a; border-color: #3b5063; }
+.app-night :is(.settings-dialog, .refs-panel) .secondary-button:hover:not(:disabled) { background: #223a4e; }
+.app-night :is(.settings-dialog, .refs-panel) .link-button { color: #7bd7e6; }
+.app-night .endpoint-card, .app-night :is(.export-report, .candidate-box) { background: #182534; border-color: #2d3d4d; }
+.app-night .endpoint-card > span { color: #7bd7e6; background: #173443; }
+.app-night .settings-feedback.success { color: #8fe0b8; background: #153126; }
+.app-night .settings-feedback.error { color: #ffb4be; background: #3a1d25; }
+.app-night .settings-feedback { color: #d3dfeb; }
+.app-night .settings-actions .danger-button { color: #ff9aa8; }
+.app-night .settings-actions .danger-button:hover:not(:disabled) { background: #3a1d25; }
+.app-night .issue-list.error { color: #ff9aa8; }
+.app-night .issue-list.warning { color: #f2cf86; }
+/* Substituir no livro */
+.app-night .rp-partial { color: #f2cf86; background: #3a3016; }
+.app-night :is(.rp-chapters > li, .rp-note, .refs-list button, .refs-records li) { color: #d3dfeb; background: #182534; border-color: #2d3d4d; }
+.app-night .refs-list button:hover, .app-night .refs-body li > button:not(.link-button):hover { background: #223a4e; }
+.app-night .rp-sample del { color: #ff9aa8; background: #3a1d25; }
+.app-night .rp-sample ins { color: #8fe0b8; background: #153126; }
+.app-night .rp-story { background: #2a2616; border-color: #5a4d20; }
+.app-night .rp-confirm { background: #173443; border-color: #2f6f80; }
+.app-night :is(.rp-sub, .rp-samples, .rp-chapters small, .rp-note small) { color: #aebdd0; }
+.app-night .settings-dialog code { color: #d3dfeb; background: #223243; }
+/* Dados do projeto */
+.app-night :is(.pd-files li, .pd-snapshots li, .pd-row) { color: #d3dfeb; background: #182534; border-color: #2d3d4d; }
+.app-night :is(.pd-files code, .pd-row code) { color: #aebdd0; background: transparent; }
+.app-night .pd-mapping select { color: #d3dfeb; background: #1b2a3a; border-color: #3b5063; }
+/* Referências */
+.app-night .refs-scope button, .app-night .refs-tabs button { color: #d3dfeb; background: #1b2a3a; border-color: #3b5063; }
+.app-night .refs-scope button.active, .app-night .refs-tabs button.active { color: #0b1620; background: #7bd7e6; border-color: #7bd7e6; }
+.app-night .refs-body h4 { color: #aebdd0; }
+.app-night .refs-actions { border-top-color: #2d3d4d; }
+.app-night :is(.refs-panel, .settings-dialog) .md-table th { color: #d3dfeb; background: #1f3042; }
+.app-night :is(.refs-panel, .settings-dialog) .md-table :is(th, td) { border-color: #2d3d4d; }
+.app-night :is(.refs-panel, .settings-dialog) .wikilink { color: #7fd0e4; }
+.app-night :is(.refs-panel, .settings-dialog) .note-preview { color: #d3dfeb; }
+/* Selos e chips (Caderno, Bíblia, Referências) */
+.app-night .status-badge.aberto, .app-night .canon-chip.aberto { color: #f2cf86; background: #3a3016; }
+.app-night .status-badge.resolvido, .app-night .canon-chip.confirmado { color: #8fe0b8; background: #153126; }
+.app-night .status-badge.supersedido, .app-night .canon-chip, .app-night .canon-chip.vazia { color: #aebdd0; background: #223243; }
+.app-night .canon-chip.proposto { color: #cdbcff; background: #2b2347; }

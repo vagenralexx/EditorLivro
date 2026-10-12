@@ -170,3 +170,43 @@
 .app-night .notebook .md-table th { color: #d3dfeb; background: #1f3042; }
 .app-night .notebook .md-table th, .app-night .notebook .md-table td { border-color: #2d3d4d; }
 .app-night .notebook .rp-sample del, .app-night .notebook .kind-dot { opacity: 1; }
+
+/* Salvar e estado da nota */
+.save-state { font-weight: 700; color: #1f6b4a; }
+.save-state.dirty { color: #8a4b00; }
+.note-tools .save-now { color: #fff; border-color: #117b91; background: #117b91; }
+.note-tools .save-now:disabled { color: #55657c; border-color: #d8e2ef; background: #f1f4f8; cursor: default; }
+.note-help kbd { padding: 0 4px; border: 1px solid #cdd6e2; border-radius: 4px; background: #fff; font: 10px "Cascadia Code", Consolas, monospace; }
+/* Registros: com ID x tabelas por nome */
+.records-groups { display: flex; gap: 4px; margin-bottom: 8px; padding: 3px; border-radius: 9px; background: #e8eef5; }
+.records-groups button { flex: 1; padding: 6px 10px; border: 0; border-radius: 7px; color: #42516a; background: none; font: inherit; font-size: 12px; font-weight: 700; }
+.records-groups button.active { color: #0a6d83; background: #fff; box-shadow: 0 1px 3px rgba(19, 33, 56, .14); }
+.records-filters select { padding: 4px 8px; border: 1px solid #cedaea; border-radius: 8px; font: inherit; font-size: 12px; max-width: 280px; }
+.bible-missing { margin-top: 10px; }
+.bible-missing summary { cursor: pointer; color: #55657c; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+
+/* Tema escuro: Salvar, grupos de registros, lista da Bíblia e áreas de texto */
+.app-night .notebook .note-tools .save-now { color: #0b1620; background: #7bd7e6; border-color: #7bd7e6; }
+.app-night .notebook .note-tools .save-now:disabled { color: #8fa1b6; background: #1b2a3a; border-color: #3b5063; }
+.app-night .notebook .save-state { color: #8fe0b8; }
+.app-night .notebook .save-state.dirty { color: #f2cf86; }
+.app-night .notebook .records-groups { background: #182534; }
+.app-night .notebook .records-groups button { color: #d3dfeb; }
+.app-night .notebook .records-groups button.active { color: #7bd7e6; background: #223a4e; box-shadow: none; }
+.app-night .notebook :is(.records-filters select, .records-filters input, .bible-picker select, .settings-field input, .settings-field textarea, .bible-ai textarea, .bible-proposal textarea, .new-note input, .new-note select) { color: #d3dfeb; background: #1b2a3a; border-color: #3b5063; }
+.app-night .notebook ::placeholder { color: #8fa1b6; }
+.app-night .notebook .bible-sections li button.active { color: #0b1620; background: #7bd7e6; }
+.app-night .notebook .bible-sections li button.active .canon-chip { color: #0b1620; background: rgba(255, 255, 255, .55); }
+.app-night .notebook .bible-sections li button:hover { background: #223a4e; }
+.app-night .notebook .bible-missing summary { color: #aebdd0; }
+.app-night .notebook .bible-levels label { color: #d3dfeb; border-color: #3b5063; }
+.app-night .notebook .bible-levels label.active { background: #173443; border-color: #7bd7e6; }
+.app-night .notebook .bible-levels small { color: #aebdd0; }
+.app-night .notebook .note-help kbd { color: #d3dfeb; background: #223243; border-color: #3b5063; }
+.app-night .notebook :is(.primary-button) { color: #fff; }
+.app-night .notebook .primary-button:disabled { color: #aebdd0; background: #24556a; }
+.app-night .notebook .secondary-button { color: #d3dfeb; background: #1b2a3a; border-color: #3b5063; }
+.app-night .notebook .settings-feedback.success { color: #8fe0b8; background: #153126; }
+.app-night .notebook .settings-feedback.error { color: #ffb4be; background: #3a1d25; }
+.app-night .notebook .records-filters button { color: #d3dfeb; background: #1b2a3a; border-color: #3b5063; }
+.app-night .notebook .records-filters button.active { color: #0b1620; background: #7bd7e6; border-color: #7bd7e6; }

@@ -28,6 +28,7 @@ interface NotebookDialogProps {
 
 type Tab = "notes" | "records" | "graph" | "timeline";
 type StatusFilter = "todos" | "aberto" | "resolvido";
+const RECORD_LIST_LIMIT = 300;
 
 export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, activeChapterLines, ai, genre, glossaryLines, glossaryData, initialPath, onClose, onChanged }: NotebookDialogProps) {
   const [index, setIndex] = useState<VaultIndex | null>(null);
@@ -53,6 +54,8 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   const [recordQuery, setRecordQuery] = useState("");
   const [hiddenKinds, setHiddenKinds] = useState<Set<NoteKind>>(new Set());
   const [hover, setHover] = useState("");
+  const [userOpen, setUserOpen] = useState<Partial<Record<NoteKind, boolean>>>({});
+  const [recordGroup, setRecordGroup] = useState<"ids" | "nomes">("ids");
   const textRef = useRef<HTMLTextAreaElement>(null);
   const dirty = content !== saved;
 
@@ -80,6 +83,13 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
     if (!selected || content === saved) return;
     try { await vaultWrite(projectRoot, selected, content); setSaved(content); await refresh(); onChanged(); } catch (reason) { setError(String(reason)); }
   }, [content, onChanged, projectRoot, refresh, saved, selected]);
+
+  // Ctrl+S salva a nota na hora (o autosave abaixo cobre o resto).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void save(); } };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [save]);
 
   // Autosave 900 ms após parar de digitar.
   useEffect(() => {
@@ -164,7 +174,10 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   }, [index?.edges, visibleIds, visibleNotes]);
   const neighbors = useMemo(() => { const set = new Set<string>(); if (hover) { set.add(hover); for (const edge of graph.edges) { if (edge.from === hover) set.add(edge.to); if (edge.to === hover) set.add(edge.from); } } return set; }, [graph.edges, hover]);
 
-  const records = index?.records ?? [];
+  const allRecords = index?.records ?? [];
+  const idRecords = allRecords.filter((record) => !record.keyed);
+  const namedRecords = allRecords.filter((record) => record.keyed);
+  const records = recordGroup === "ids" ? idRecords : namedRecords;
   const recordIds = useMemo(() => new Set(records.filter((record) => !record.keyed).map((record) => record.id)), [records]);
   const prefixes = useMemo(() => { const counts = new Map<string, number>(); for (const record of records) counts.set(record.prefix, (counts.get(record.prefix) ?? 0) + 1); return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)); }, [records]);
   const filteredRecords = records.filter((record) => (!recordPrefix || record.prefix === recordPrefix) && (recordStatus === "todos" || record.status === recordStatus) && (!recordQuery || `${record.id} ${record.title}`.toLowerCase().includes(recordQuery.toLowerCase())));
@@ -182,7 +195,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
       <section className="notebook" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="notebook-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="notebook-header">
           <div><span className="eyebrow">MEMÓRIA ENTRE CAPÍTULOS</span><h2 id="notebook-title">Caderno do livro</h2></div>
-          <div className="notebook-tabs" role="tablist">{([["notes", "Notas"], ["records", `Registros${records.length ? ` (${records.length})` : ""}`], ["graph", "Grafo"], ["timeline", "Linha do tempo"]] as [Tab, string][]).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{label}</button>)}</div>
+          <div className="notebook-tabs" role="tablist">{([["notes", "Notas"], ["records", `Registros${idRecords.length || namedRecords.length ? ` (${idRecords.length || namedRecords.length})` : ""}`], ["graph", "Grafo"], ["timeline", "Linha do tempo"]] as [Tab, string][]).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{label}</button>)}</div>
           <div className="notebook-actions">
             <button className="secondary-button" type="button" onClick={() => { void save(); setRecapOpen(true); }} disabled={!activeChapter}>Gerar recap do capítulo aberto</button>
             <button className="secondary-button" type="button" onClick={() => void revealFolder()} disabled={!index?.exists} title="O caderno é uma pasta de arquivos .md compatível com o Obsidian">Mostrar pasta (Obsidian)</button>
@@ -210,15 +223,16 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
               <input autoFocus value={creating.title} placeholder="Título da nota" onChange={(event) => setCreating({ ...creating, title: event.target.value })} />
               <div><button className="primary-button" type="submit" disabled={!creating.title.trim()}>Criar</button><button className="secondary-button" type="button" onClick={() => setCreating(null)}>Cancelar</button></div></form>
               : <button className="secondary-button" type="button" onClick={() => setCreating({ kind: "personagem", title: "" })}>＋ Nova nota</button>}
-            <div className="notebook-groups">{kindOrder.map((kind) => { const group = filtered.filter((note) => note.kind === kind); if (!group.length) return null; return <details key={kind} open><summary><span className="kind-dot" style={{ background: kindInfo[kind].color }} />{kindInfo[kind].plural} <small>{group.length}</small></summary>
+            <div className="notebook-groups">{kindOrder.map((kind) => { const group = filtered.filter((note) => note.kind === kind); if (!group.length) return null; return <details key={kind} open={userOpen[kind] ?? (kind === selectedMeta?.kind || query.trim() !== "")} onToggle={(event) => { const open = event.currentTarget.open; setUserOpen((current) => (current[kind] === open ? current : { ...current, [kind]: open })); }}><summary><span className="kind-dot" style={{ background: kindInfo[kind].color }} />{kindInfo[kind].plural} <small>{group.length}</small></summary>
               <ul>{group.map((note) => <li key={note.path}><button type="button" className={note.path === selected ? "active" : ""} onClick={() => void open(note.path)} title={note.path}>{note.heading ?? note.title}{note.state === "fechado" && <small className="closed"> ✓ fechado</small>}</button></li>)}</ul></details>; })}</div>
           </aside>
           <div className="notebook-main">
             {!selectedMeta ? <p className="notebook-hint">Selecione uma nota à esquerda ou crie uma nova. Clique em um <span className="wikilink">[[link]]</span> para navegar entre as notas.</p> : <>
               <div className="note-head">
                 {renaming !== null ? <form onSubmit={(event) => { event.preventDefault(); void renameSelected(renaming); }}><input autoFocus value={renaming} onChange={(event) => setRenaming(event.target.value)} /><button className="primary-button" type="submit">Renomear</button><button className="secondary-button" type="button" onClick={() => setRenaming(null)}>Cancelar</button></form>
-                  : <><h3><span className="kind-dot" style={{ background: kindInfo[selectedMeta.kind].color }} />{selectedMeta.heading ?? selectedMeta.title}</h3><small>{kindInfo[selectedMeta.kind].label}{selectedMeta.aliases.length ? ` · também: ${selectedMeta.aliases.join(", ")}` : ""} · {dirty ? "salvando…" : "salvo"}</small></>}
+                  : <><h3><span className="kind-dot" style={{ background: kindInfo[selectedMeta.kind].color }} />{selectedMeta.heading ?? selectedMeta.title}</h3><small>{kindInfo[selectedMeta.kind].label}{selectedMeta.aliases.length ? ` · também: ${selectedMeta.aliases.join(", ")}` : ""} · <span className={dirty ? "save-state dirty" : "save-state"} role="status">{dirty ? "alterações ainda não salvas" : "✓ salvo"}</span></small></>}
                 <div className="note-tools">
+                  <button type="button" className="save-now" onClick={() => void save()} disabled={!dirty} title="Salvar agora (Ctrl+S)">Salvar</button>
                   <button type="button" className={mode === "preview" ? "active" : ""} onClick={() => setMode("preview")}>Ler</button>
                   <button type="button" className={mode === "edit" ? "active" : ""} onClick={() => setMode("edit")}>Editar</button>
                   <button type="button" onClick={() => setRenaming(selectedMeta.title)}>Renomear</button>
@@ -227,7 +241,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
               </div>
               {mode === "edit" ? <div className="note-editor"><textarea ref={textRef} value={content} onChange={(event) => setContent(event.target.value)} spellCheck aria-label={`Conteúdo de ${selectedMeta.title}`} />
                 {suggestion.length > 0 && <ul className="link-suggestions" aria-label="Sugestões de link">{suggestion.map((note) => <li key={note.path}><button type="button" onMouseDown={(event) => { event.preventDefault(); insertLink(note.title); }}><span className="kind-dot" style={{ background: kindInfo[note.kind].color }} />{note.title}</button></li>)}</ul>}
-                <small className="note-help">Digite <code>[[</code> para linkar outra nota. O frontmatter (entre ---) guarda tipo, apelidos (<code>aliases</code>) e estado.</small></div>
+                <small className="note-help">Salva sozinho 1 s depois que você para de digitar; <kbd>Ctrl</kbd>+<kbd>S</kbd> salva na hora. Digite <code>[[</code> para linkar outra nota. O frontmatter (entre ---) guarda tipo, apelidos (<code>aliases</code>) e estado.</small></div>
                 : <article className="note-preview">{renderMarkdown(content, mdLinks)}{!splitFrontmatter(content).body.trim() && <p className="notebook-hint">Nota vazia. Clique em Editar para escrever.</p>}</article>}
             </>}
           </div>
@@ -243,14 +257,21 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
 
         {tab === "records" && <div className="records-view">
           <div className="records-list">
-            {records.length === 0 ? <p className="notebook-hint">Nenhum registro encontrado. Registros são linhas de tabela Markdown cuja primeira coluna é um ID estável (CF-01, FIO-03, LAC-02, PT-L1-01…) ou, nas notas do tipo Registro/Mapa, o nome do item (Mapa de Âncoras, Matriz de Relações, Verificação de Pontas Soltas).</p> : <>
+            {allRecords.length === 0 ? <p className="notebook-hint">Nenhum registro encontrado. Registros são linhas de tabela Markdown cuja primeira coluna é um ID estável (CF-01, FIO-03, LAC-02, PT-L1-01…) ou, nas notas do tipo Registro/Mapa, o nome do item (Mapa de Âncoras, Matriz de Relações, Verificação de Pontas Soltas).</p> : <>
+              <div className="records-groups" role="group" aria-label="Tipo de registro">
+                <button type="button" aria-pressed={recordGroup === "ids"} className={recordGroup === "ids" ? "active" : ""} onClick={() => { setRecordGroup("ids"); setRecordPrefix(""); }}>Com ID ({idRecords.length})</button>
+                <button type="button" aria-pressed={recordGroup === "nomes"} className={recordGroup === "nomes" ? "active" : ""} onClick={() => { setRecordGroup("nomes"); setRecordPrefix(""); }} title="Linhas de tabelas de mapas e matrizes, identificadas pelo nome do item">Tabelas por nome ({namedRecords.length})</button>
+              </div>
               <div className="records-filters">
-                <button type="button" className={recordPrefix === "" ? "active" : ""} onClick={() => setRecordPrefix("")}>Todos ({records.length})</button>
-                {prefixes.map(([prefix, count]) => <button key={prefix} type="button" className={recordPrefix === prefix ? "active" : ""} onClick={() => setRecordPrefix(prefix)}>{prefix} ({count})</button>)}
+                {recordGroup === "ids"
+                  ? <><button type="button" className={recordPrefix === "" ? "active" : ""} onClick={() => setRecordPrefix("")}>Todos ({records.length})</button>
+                    {prefixes.map(([prefix, count]) => <button key={prefix} type="button" className={recordPrefix === prefix ? "active" : ""} onClick={() => setRecordPrefix(prefix)}>{prefix} ({count})</button>)}</>
+                  : <select value={recordPrefix} onChange={(event) => setRecordPrefix(event.target.value)} aria-label="Filtrar por nota de origem"><option value="">Todas as notas ({records.length})</option>{prefixes.map(([prefix, count]) => <option key={prefix} value={prefix}>{prefix} ({count})</option>)}</select>}
                 <select value={recordStatus} onChange={(event) => setRecordStatus(event.target.value as StatusFilter)} aria-label="Filtrar por estado"><option value="todos">Qualquer estado</option><option value="aberto">Abertos</option><option value="resolvido">Resolvidos</option></select>
                 <input type="search" placeholder="Buscar ID ou texto…" value={recordQuery} onChange={(event) => setRecordQuery(event.target.value)} aria-label="Buscar registros" />
               </div>
-              {filteredRecords.map((record) => <button key={record.uid} type="button" className={`record-item ${record.uid === recordId ? "active" : ""} ${record.keyed ? "keyed" : ""}`} onClick={() => setRecordId(record.uid)}><b>{record.id}</b><span>{record.title || "—"}</span>{record.status ? <i className={`status-badge ${record.status}`} title="Estado inferido do texto da última linha; o arquivo não é alterado">{record.status}</i> : <i />}</button>)}
+              {filteredRecords.slice(0, RECORD_LIST_LIMIT).map((record) => <button key={record.uid} type="button" className={`record-item ${record.uid === recordId ? "active" : ""} ${record.keyed ? "keyed" : ""}`} onClick={() => setRecordId(record.uid)}><b>{record.id}</b><span>{record.title || "—"}</span>{record.status ? <i className={`status-badge ${record.status}`} title="Estado inferido do texto da última linha; o arquivo não é alterado">{record.status}</i> : <i />}</button>)}
+              {filteredRecords.length > RECORD_LIST_LIMIT && <p className="muted">Mostrando {RECORD_LIST_LIMIT} de {filteredRecords.length}. Use a busca ou os filtros para chegar ao que procura.</p>}
               {filteredRecords.length === 0 && <p className="muted">Nenhum registro com esses filtros.</p>}
             </>}
           </div>

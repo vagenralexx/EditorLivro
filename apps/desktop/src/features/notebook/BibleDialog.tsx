@@ -156,7 +156,7 @@ export function BibleDialog({ projectRoot, chapters, activeChapterIndex, ai, gen
           <aside className="notebook-list bible-sections" aria-label="Seções da bíblia">
             <small className="muted">{levelInfo[doc.level].label}{doc.book ? ` · ${doc.book}` : ""} · {doc.path}</small>
             <ul>{doc.sections.map((s) => <li key={s.title}><button type="button" className={s.title === selected ? "active" : ""} onClick={() => void select(s.title)}>{s.title}<i className={`canon-chip ${statusLabel(s)}`}>{statusLabel(s)}</i></button></li>)}</ul>
-            {missing.length > 0 && <><h3>Seções que faltam</h3><ul>{missing.map((m) => <li key={m.id}><button type="button" className={selected === `id:${m.id}` ? "active" : ""} onClick={() => void select(`id:${m.id}`)}>＋ {m.title}</button></li>)}</ul></>}
+            {missing.length > 0 && <details className="bible-missing" open={selected.startsWith("id:")}><summary>Seções que faltam ({missing.length})</summary><ul>{missing.map((m) => <li key={m.id}><button type="button" className={selected === `id:${m.id}` ? "active" : ""} onClick={() => void select(`id:${m.id}`)}>＋ {m.title}</button></li>)}</ul></details>}
           </aside>
 
           <div className="notebook-main bible-main">

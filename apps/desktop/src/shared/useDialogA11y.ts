@@ -3,7 +3,7 @@ import { useEffect, useRef, type RefObject } from "react";
 // Pilha de diálogos abertos: só o do topo reage a Tab/Esc (um recap dentro do caderno, por exemplo).
 const openDialogs: HTMLElement[] = [];
 
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'a[href], summary, button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Acessibilidade de diálogo modal: foco inicial dentro dele, Tab preso no diálogo,
@@ -23,7 +23,8 @@ export function useDialogA11y<T extends HTMLElement>(onClose: () => void): RefOb
     openDialogs.push(dialog);
     // Radios de um mesmo grupo são UMA parada de Tab (a marcada, ou a primeira se nenhuma está marcada).
     const focusables = () => {
-      const all = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((node) => node.offsetParent !== null && !node.closest("[inert]"));
+      const visible = (node: HTMLElement) => (typeof node.checkVisibility === "function" ? node.checkVisibility({ visibilityProperty: true, contentVisibilityAuto: true }) : node.offsetParent !== null);
+      const all = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((node) => visible(node) && !node.closest("[inert]"));
       return all.filter((node) => {
         if (!(node instanceof HTMLInputElement) || node.type !== "radio" || !node.name) return true;
         const group = all.filter((other): other is HTMLInputElement => other instanceof HTMLInputElement && other.type === "radio" && other.name === node.name);
@@ -38,9 +39,16 @@ export function useDialogA11y<T extends HTMLElement>(onClose: () => void): RefOb
       if (event.key !== "Tab") return;
       const nodes = focusables();
       if (nodes.length === 0) { event.preventDefault(); dialog.focus(); return; }
-      const [first, last] = [nodes[0], nodes[nodes.length - 1]];
-      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+      // O ciclo é feito à mão: o Chrome também põe áreas roláveis na ordem do Tab e o foco escaparia do diálogo.
+      const current = nodes.indexOf(document.activeElement as HTMLElement);
+      const next = event.shiftKey ? (current <= 0 ? nodes.length - 1 : current - 1) : (current === -1 || current === nodes.length - 1 ? 0 : current + 1);
+      event.preventDefault();
+      // Se um elemento recusar o foco (ex.: dentro de <details> fechado), tenta o seguinte.
+      for (let step = 0; step < nodes.length; step += 1) {
+        const target = nodes[(next + (event.shiftKey ? -step : step) + nodes.length * 2) % nodes.length];
+        target.focus();
+        if (document.activeElement === target) break;
+      }
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => {

@@ -244,12 +244,16 @@ pub fn sanitize_title(title: &str) -> Result<String, String> {
     Ok(cleaned.chars().take(100).collect())
 }
 
-/// Arquivos de navegação (índice, matriz, mapa) não são entidades mesmo dentro da pasta delas.
+/// Arquivos de navegação (índice, matriz, mapa) não são entidades nem bíblias, mesmo dentro da pasta delas.
 fn navigation_kind(stem: &str, from_folder: Kind) -> Kind {
-    if !matches!(from_folder, Kind::Personagem | Kind::Lugar | Kind::Fio | Kind::Evento | Kind::Mundo) { return from_folder; }
+    if matches!(from_folder, Kind::Capitulo | Kind::Nota) { return from_folder; }
     let folded = fold(&stem.replace(['-', '_'], " "));
     let first = folded.split_whitespace().next().unwrap_or("");
-    match first { "indice" | "index" | "readme" | "moc" | "sumario" => Kind::Nota, "matriz" | "mapa" | "quadro" => Kind::Registro, _ => from_folder }
+    match first {
+        "indice" | "index" | "readme" | "moc" | "sumario" => Kind::Nota,
+        "matriz" | "mapa" | "quadro" if from_folder != Kind::Registro => Kind::Registro,
+        _ => from_folder,
+    }
 }
 
 struct Loaded { meta: NoteMeta, body: String, links: Vec<String> }
@@ -982,6 +986,15 @@ mod tests {
         let idx = vault.index().unwrap();
         let kind = |t: &str| idx.notes.iter().find(|n| n.title == t).unwrap().kind;
         assert_eq!((kind("Indice"), kind("Matriz-de-Relacoes")), (Kind::Nota, Kind::Registro));
+        vault.write_note("01-Biblias/Indice.md", "# Bíblias da Série\n").unwrap();
+        vault.write_note("01-Biblias/Biblia-L1.md", "# Bíblia L1\n").unwrap();
+        let mut with_bibles = BTreeMap::new();
+        with_bibles.insert("04-Personagens".to_string(), "personagem".to_string());
+        with_bibles.insert("01-Biblias".to_string(), "biblia".to_string());
+        let v2 = Vault::new(dir.path().to_str().unwrap(), KindMap::from_entries(&with_bibles));
+        let idx2 = v2.index().unwrap();
+        let k2 = |t: &str| idx2.notes.iter().find(|n| n.title == t).unwrap().kind;
+        assert_eq!((k2("Indice"), k2("Biblia-L1")), (Kind::Nota, Kind::Biblia), "o índice da pasta de bíblias não é uma bíblia");
         assert_eq!(idx.notes.iter().find(|n| n.title == "Eugenio-Castelo").unwrap().heading.as_deref(), Some("Eugênio Castelo"));
         assert_eq!(kind("Eugenio-Castelo"), Kind::Personagem);
         // "índice" no texto do capítulo não puxa a nota de índice para a memória.

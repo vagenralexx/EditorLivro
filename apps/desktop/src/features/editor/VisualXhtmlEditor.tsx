@@ -98,7 +98,10 @@ export function VisualXhtmlEditor({ documentId, documentName, source, theme, fon
     if (!canvas || !documentId) return;
     const restorePage = requestedPage ?? pendingRestorePageRef.current;
     if (Math.abs(canvas.clientWidth - columnWidth) > 1) {
-      if (restorePage) pendingRestorePageRef.current = restorePage;
+      // A largura da coluna mudou (ex.: Editar ⇄ Prévia Kindle, janela redimensionada): guarda a página em que
+      // estávamos, calculada com o passo ANTIGO, para realinhar o scroll ao passo novo. Sem isso o scroll
+      // fica no meio de uma página e o texto aparece cortado nas duas bordas.
+      pendingRestorePageRef.current = restorePage ?? Math.max(1, Math.round(canvas.scrollLeft / pageStep()) + 1);
       setColumnWidth(canvas.clientWidth);
       return;
     }
