@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
@@ -16,6 +17,7 @@ interface ProjectDocument { name: string; path: string; }
 interface EditorialSuggestion { before: string; after: string; reason: string; }
 interface EditorialFinding { severity: "baixa" | "média" | "alta" | string; title: string; detail: string; anchor: string; }
 interface AnalysisResult { provider: string; model: string; summary: string; findings: EditorialFinding[]; suggestions: EditorialSuggestion[]; }
+interface AiProgress { elapsedMs: number; answerChars: number; reasoningChars: number; phase: "waiting" | "thinking" | "writing"; }
 interface SaveResult { backupPath: string; }
 interface EffortOption { value: string; label: string; }
 interface ModelEffortOptions { configurable: boolean; levels: EffortOption[]; default: string; note: string; }
@@ -69,6 +71,14 @@ function loadAiPreferences(): PersistedAiPreferences {
   } catch { return { providerId: "nvidia", models: initialModels(), availableModels: initialAvailableModels(), validatedProviders: {}, reasoningEfforts: initialReasoningEfforts() }; }
 }
 
+function progressLabel(progress: AiProgress | null) {
+  if (!progress) return "Enviando ao servidor…";
+  const seconds = Math.round(progress.elapsedMs / 1000);
+  if (progress.phase === "writing") return `Escrevendo a análise… ${progress.answerChars} caracteres · ${seconds} s`;
+  if (progress.phase === "thinking") return `Modelo raciocinando… ${seconds} s`;
+  return `Aguardando o servidor (fila)… ${seconds} s`;
+}
+
 function isXhtml(path: string) { return /\.x?html$/iu.test(path); }
 const chapterCollator = new Intl.Collator("pt-BR", { numeric: true, sensitivity: "base" });
 
@@ -111,6 +121,7 @@ export function WorkspaceDashboard() {
   const [suggestions, setSuggestions] = useState<EditorialSuggestion[]>([]);
   const [analysisError, setAnalysisError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiProgress, setAiProgress] = useState<AiProgress | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>("warm");
   const [isAppDark, setIsAppDark] = useState(false);
@@ -142,6 +153,15 @@ export function WorkspaceDashboard() {
       .catch(() => undefined);
     return () => { active = false; };
   }, []);
+
+  // Progresso ao vivo da análise (fila → raciocínio → escrita), enviado pelo backend.
+  useEffect(() => {
+    if (!isAnalyzing) { setAiProgress(null); return undefined; }
+    let unlisten: (() => void) | undefined;
+    let active = true;
+    listen<AiProgress>("ai-progress", (event) => setAiProgress(event.payload)).then((stop) => { if (active) unlisten = stop; else stop(); }).catch(() => undefined);
+    return () => { active = false; unlisten?.(); };
+  }, [isAnalyzing]);
 
   const provider = useMemo(() => providerFor(providerId), [providerId]);
   // Catálogo unificado: só provedores com chave salva e modelos carregados, agrupados por servidor.
@@ -360,7 +380,7 @@ export function WorkspaceDashboard() {
           <button className="secondary-button settings-link" type="button" onClick={() => setIsSettingsOpen(true)}>Configurar provedor e chave</button>
           <label className="field-label">PERFIL EDITORIAL<select value={profileId} onChange={(event) => setProfileId(event.target.value as EditorialProfileId)}>{editorialProfiles.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
           <div className="profile-card"><span>{profile.scope}</span><strong>{profile.shortLabel}</strong><p>{profile.description}</p><small>{profile.output}</small></div>
-          <button className="primary-button wide-button" type="button" onClick={analyzeDocument} disabled={isAnalyzing || !activeDocument}>{isAnalyzing ? `Analisando página ${pagination.page}…` : `Analisar página ${pagination.page}`}</button><p className="privacy-note">Apenas a página visível é enviada ao provedor escolhido. A chave nunca entra no XHTML ou EPUB.</p>
+          <button className="primary-button wide-button" type="button" onClick={analyzeDocument} disabled={isAnalyzing || !activeDocument}>{isAnalyzing ? `Analisando página ${pagination.page}…` : `Analisar página ${pagination.page}`}</button>{isAnalyzing && <div className="analysis-progress" role="status" aria-live="polite"><span>{progressLabel(aiProgress)}</span><button type="button" className="discard-button" onClick={() => void invoke("cancel_ai_analysis")}>Cancelar</button></div>}<p className="privacy-note">Apenas a página visível é enviada ao provedor escolhido. A chave nunca entra no XHTML ou EPUB.</p>
           {(analysisError || analysis || findings.length > 0 || suggestions.length > 0) && <section className={analysisError ? "analysis-result error" : "analysis-result"} aria-live="polite"><strong>{analysisError ? "Não foi possível analisar" : "Resultado da análise"}</strong>{analysisError ? <p>{analysisError}</p> : <>{analysis && <p className="analysis-summary">{analysis}</p>}{findings.length > 0 && <div className="finding-list"><span className="finding-heading">Achados editoriais</span>{findings.map((finding, index) => <article className="finding-card" key={`${finding.title}-${index}`}><header><strong>{finding.title}</strong><span className={`severity ${finding.severity.toLocaleLowerCase("pt-BR")}`}>{finding.severity}</span></header><p>{finding.detail}</p>{finding.anchor && <blockquote><strong>Trecho:</strong> “{finding.anchor}”</blockquote>}</article>)}</div>}{suggestions.length > 0 && <div className="suggestion-list"><span className="suggestion-heading">Sugestões aplicáveis</span>{suggestions.map((suggestion, index) => <article className="suggestion-card" key={`${suggestion.before}-${index}`}><div><strong>Antes — texto atual</strong><del>{suggestion.before}</del></div><div><strong>Depois — proposta</strong><ins>{suggestion.after}</ins></div><small>{suggestion.reason}</small><button type="button" onClick={() => applySuggestion(suggestion)}>Aplicar sugestão</button></article>)}</div>}</>}</section>}
           <div className="module-row"><span>Módulos do núcleo</span><strong>{bootstrap ? `${bootstrap.modules.length} preparados` : "carregando"}</strong></div>
         </aside>
