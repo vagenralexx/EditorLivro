@@ -12,6 +12,7 @@ import type { EditorialProfileId } from "../editorial/catalog";
 import { isProjectBroken, loadProject, patchProject, toStoredPath } from "../project/projectStore";
 import { useDialogA11y } from "../../shared/useDialogA11y";
 import { BibleDialog } from "../notebook/BibleDialog";
+import { recentProjects, resumeLabel, touchRecentProject, type RecentProject } from "../recent/recentApi";
 import { ReferencesPanel } from "../references/ReferencesPanel";
 import { ReplaceDialog } from "../replace/ReplaceDialog";
 import { samePath } from "../replace/replaceApi";
@@ -126,6 +127,7 @@ export function WorkspaceDashboard() {
   const [isReplaceOpen, setIsReplaceOpen] = useState(false);
   const [isReferencesOpen, setIsReferencesOpen] = useState(false);
   const [isBibleOpen, setIsBibleOpen] = useState(false);
+  const [recents, setRecents] = useState<RecentProject[]>([]);
   const [notebookStart, setNotebookStart] = useState("");
   const [replaceStart, setReplaceStart] = useState("");
   const [memoryNote, setMemoryNote] = useState("");
@@ -157,6 +159,7 @@ export function WorkspaceDashboard() {
   const [resumePage, setResumePage] = useState(1);
   const [externalEditorRevision, setExternalEditorRevision] = useState(0);
   const positionTimer = useRef<number | undefined>(undefined);
+  const pendingPosition = useRef<{ root: string; value: { documento: string; pagina: number } } | null>(null);
   const [pendingDocument, setPendingDocument] = useState<ProjectDocument | null>(null);
 
   useEffect(() => { invoke<AppBootstrap>("get_app_bootstrap").then(setBootstrap).catch(() => setBootstrap(null)); }, []);
@@ -292,11 +295,8 @@ export function WorkspaceDashboard() {
     }
   }, []);
 
-  const openProject = useCallback(async () => {
-    setIsOpening(true);
-    try {
-      const selected = await open({ directory: true, multiple: false, recursive: true, title: "Escolha a pasta que contém os XHTML do livro" });
-      if (!selected || Array.isArray(selected)) return;
+  /** Abre uma pasta de livro já escolhida: restaura configurações, capítulo e página onde a leitura parou. */
+  const openProjectFolder = useCallback(async (selected: string) => {
       const files = await collectXhtmlFiles(selected);
       if (!files.length) {
         await message("Nenhum arquivo .xhtml ou .html foi encontrado nesta pasta. Escolha a pasta extraída do livro.", { title: "Arquivos XHTML não encontrados", kind: "info" });
@@ -314,12 +314,58 @@ export function WorkspaceDashboard() {
       settingsReady.current = selected;
       glossaryLoad(selected).then((state) => { setGlossary(glossaryToLines(state.glossary)); setGlossaryData(state.glossary); }).catch(() => { setGlossary([]); setGlossaryData(null); });
       await loadDocument(savedDocument ?? files[0], savedDocument ? stored?.pagina : 1);
+    void touchRecentProject(selected).then(setRecents).catch(() => undefined);
+  }, [loadDocument]);
+
+  // Alterações do capítulo aberto não se perdem ao trocar de livro.
+  // Grava já a posição de leitura pendente (ao trocar de livro ou fechar a janela).
+  const flushPositionRef = useRef<() => Promise<void>>(async () => undefined);
+  flushPositionRef.current = async () => {
+    if (positionTimer.current) window.clearTimeout(positionTimer.current);
+    const pending = pendingPosition.current;
+    pendingPosition.current = null;
+    if (pending) await patchProject(pending.root, "leitura", pending.value).catch(() => undefined);
+  };
+
+  const openProject = useCallback(async () => {
+    setIsOpening(true);
+    try {
+      if (unsavedRef.current && !(await saveRef.current())) return;
+      const selected = await open({ directory: true, multiple: false, recursive: true, title: "Escolha a pasta que contém os XHTML do livro" });
+      if (!selected || Array.isArray(selected)) return;
+      await flushPositionRef.current();
+      await openProjectFolder(selected);
     } catch (error) {
       await message(String(error), { title: "Não foi possível abrir o projeto", kind: "error" });
     } finally {
       setIsOpening(false);
     }
-  }, [loadDocument]);
+  }, [openProjectFolder]);
+
+  const lastWork = recents.find((item) => item.exists) ?? null;
+  const normalizePath = (path: string) => path.replace(/[\\/]+$/u, "").replace(/\\/gu, "/").toLowerCase();
+  const alreadyOpen = lastWork !== null && projectRoot !== "" && normalizePath(lastWork.path) === normalizePath(projectRoot);
+
+  /** "Abrir último trabalho": o livro mais recente, já no capítulo e na página onde parou. */
+  const openLastWork = useCallback(async () => {
+    const target = recents.find((item) => item.exists);
+    if (!target) {
+      await message(recents.length ? `A pasta do último trabalho não foi encontrada:\n${recents[0].path}\n\nEla pode ter sido movida ou estar em uma unidade desconectada. Use “Abrir projeto” para localizá-la.` : "Ainda não há um trabalho anterior. Use “Abrir projeto” para escolher a pasta do livro.", { title: "Último trabalho indisponível", kind: "info" });
+      return;
+    }
+    setIsOpening(true);
+    try {
+      if (unsavedRef.current && !(await saveRef.current())) return;
+      await flushPositionRef.current();
+      await openProjectFolder(target.path);
+    } catch (error) {
+      await message(String(error), { title: "Não foi possível abrir o último trabalho", kind: "error" });
+    } finally {
+      setIsOpening(false);
+    }
+  }, [openProjectFolder, recents]);
+
+  useEffect(() => { recentProjects().then(setRecents).catch(() => setRecents([])); }, []);
 
   const analyzeDocument = useCallback(async () => {
     const pageText = scope === "chapter" ? paragraphTextFromXhtml(editorText) : paragraphTextFromXhtml(pagination.xhtml || editorText);
@@ -404,11 +450,18 @@ export function WorkspaceDashboard() {
     let stop: (() => void) | undefined;
     try {
       void getCurrentWindow().onCloseRequested(async (event) => {
-        if (!unsavedRef.current) return;
+        if (!unsavedRef.current) {
+          // Sem edições pendentes, mas a última página virada ainda pode não ter sido gravada.
+          if (!pendingPosition.current) return;
+          event.preventDefault();
+          await flushPositionRef.current();
+          await getCurrentWindow().destroy();
+          return;
+        }
         event.preventDefault();
         const choice = await message("Há alterações não salvas neste capítulo.", { title: "Salvar antes de sair?", kind: "warning", buttons: { yes: "Salvar e sair", no: "Sair sem salvar", cancel: "Continuar editando" } });
         if (choice === "Salvar e sair" && !(await saveRef.current())) return;
-        if (choice === "Salvar e sair" || choice === "Sair sem salvar") await getCurrentWindow().destroy();
+        if (choice === "Salvar e sair" || choice === "Sair sem salvar") { await flushPositionRef.current(); await getCurrentWindow().destroy(); }
       }).then((fn) => { if (active) stop = fn; else fn(); }).catch(() => undefined);
     } catch { /* fora do Tauri (testes no navegador) */ }
     return () => { active = false; stop?.(); };
@@ -466,7 +519,8 @@ export function WorkspaceDashboard() {
       // A posição muda a cada página virada: gravamos só depois de 700 ms de calma.
       const target = { documento: toStoredPath(projectRoot, activeDocument.path), pagina: next.page };
       if (positionTimer.current) window.clearTimeout(positionTimer.current);
-      positionTimer.current = window.setTimeout(() => { void patchProject(projectRoot, "leitura", target).catch(() => undefined); }, 700);
+      pendingPosition.current = { root: projectRoot, value: target };
+      positionTimer.current = window.setTimeout(() => { const pending = pendingPosition.current; pendingPosition.current = null; if (pending) void patchProject(pending.root, "leitura", pending.value).catch(() => undefined); }, 700);
     }
   }, [activeDocument, projectRoot]);
 
@@ -474,12 +528,12 @@ export function WorkspaceDashboard() {
     <main className={`workspace-shell ${isAppDark ? "app-night" : ""}`}>
       <header className="topbar">
         <div className="brand"><img src="/editor-livros-epub.png" alt="" className="brand-icon" /><div><h1 className="brand-title">Editor de Livros EPUB</h1><span>Local-first · XHTML · EPUB</span></div></div>
-        <div className="topbar-actions"><button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurações</button><button className="primary-button" type="button" onClick={openProject} disabled={isOpening}>{isOpening ? "Abrindo…" : "Abrir projeto"}</button></div>
+        <div className="topbar-actions"><button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurações</button><button className="secondary-button" type="button" onClick={() => void openLastWork()} disabled={isOpening || recents.length === 0 || alreadyOpen} title={alreadyOpen ? "Este já é o livro aberto" : lastWork ? `${lastWork.name}${resumeLabel(lastWork) ? ` — ${resumeLabel(lastWork)}` : ""}` : recents.length ? `Pasta não encontrada: ${recents[0].path}` : "Ainda não há um trabalho anterior"}>Abrir último trabalho</button><button className="primary-button" type="button" onClick={openProject} disabled={isOpening}>{isOpening ? "Abrindo…" : "Abrir projeto"}</button></div>
       </header>
       <div className={isSplit ? "workspace-grid split-mode" : "workspace-grid"}>
         <aside className="library-panel" aria-label="Biblioteca do projeto">
           <div className="panel-heading"><span>PROJETO</span><button type="button" className="icon-button" onClick={openProject} aria-label="Abrir projeto XHTML">＋</button></div>
-          {!documents.length ? <div className="empty-library"><div className="empty-mark">⌘</div><strong>Nenhum livro aberto</strong><p>Abra a pasta que contém os capítulos XHTML do livro.</p><button className="secondary-button" type="button" onClick={openProject} disabled={isOpening}>Escolher pasta XHTML</button></div> : <div className="project-browser"><strong title={projectRoot}>{fileNameFromPath(projectRoot)}</strong><span>{documents.length} capítulo{documents.length === 1 ? "" : "s"} encontrado{documents.length === 1 ? "" : "s"}</span><div className="chapter-list">{documents.map((document, index) => <button key={document.path} type="button" aria-current={document.path === activeDocument?.path ? "page" : undefined} className={document.path === activeDocument?.path ? "chapter-button active" : "chapter-button"} onClick={() => requestDocument(document)}><span className="chapter-index">{String(index + 1).padStart(2, "0")}</span><span className="chapter-name">{document.name}</span></button>)}</div></div>}
+          {!documents.length ? <div className="empty-library"><div className="empty-mark">⌘</div><strong>Nenhum livro aberto</strong><p>Abra a pasta que contém os capítulos XHTML do livro.</p>{lastWork && <button className="primary-button resume-button" type="button" onClick={() => void openLastWork()} disabled={isOpening}><span>Continuar: {lastWork.name}</span>{resumeLabel(lastWork) && <small>{resumeLabel(lastWork)}</small>}</button>}<button className="secondary-button" type="button" onClick={openProject} disabled={isOpening}>Escolher pasta XHTML</button></div> : <div className="project-browser"><strong title={projectRoot}>{fileNameFromPath(projectRoot)}</strong><span>{documents.length} capítulo{documents.length === 1 ? "" : "s"} encontrado{documents.length === 1 ? "" : "s"}</span><div className="chapter-list">{documents.map((document, index) => <button key={document.path} type="button" aria-current={document.path === activeDocument?.path ? "page" : undefined} className={document.path === activeDocument?.path ? "chapter-button active" : "chapter-button"} onClick={() => requestDocument(document)}><span className="chapter-index">{String(index + 1).padStart(2, "0")}</span><span className="chapter-name">{document.name}</span></button>)}</div></div>}
           <nav className="book-tools" aria-label="Ferramentas do livro">
             <span className="tools-heading">FERRAMENTAS DO LIVRO</span>
             <button type="button" onClick={() => setIsReferencesOpen((open) => !open)} disabled={!projectRoot || !activeDocument} aria-pressed={isReferencesOpen} title="Para os nomes citados nesta página: ficha, ligações, registros e bíblia do caderno"><span>Referências</span><kbd>Alt+R</kbd></button>

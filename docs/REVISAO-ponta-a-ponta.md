@@ -151,6 +151,14 @@ Causas medidas com 136 notas / 1005 ligações:
 
 Mudanças: layout com **d3-force** (repulsão por quadtree, mola, colisão por raio; roda uma vez, determinístico) em vez de Fruchterman–Reingold artesanal; todas as ligações em um único `<path>`; destaque do mouse feito por classes direto no DOM (sem re-render); rótulos só dos 16 nós mais ligados + vizinhos + nota aberta (todos ao aproximar); **zoom (roda) e arrasto**; modo **Vizinhança da nota aberta** (até 2 ligações), que é o que de fato se lê num vault de 136 notas. Dependência nova: `d3-force` (+ tipos).
 
+## Abrir último trabalho (round 12)
+
+- **Botão "Abrir último trabalho"** na barra superior e **"Continuar: <livro>"** na tela vazia (com "capítulo · página" embaixo). Abre o livro mais recente já no **capítulo e na página** onde a leitura parou.
+- **Onde fica a lista:** `recentes.json` na pasta de dados do APP (no Windows, `%APPDATA%\<identificador do app>\`), até 8 projetos, mais recente primeiro, sem duplicar a mesma pasta (barras e caixa ignoradas). Não usa o navegador. Arquivo ilegível vira `recentes.json.bak` e a lista recomeça.
+- **Capítulo e página** continuam em `<livro>/.livro/projeto.json` (seção `leitura`) e são lidos na hora de abrir: nunca ficam defasados em relação ao livro.
+- **A última página virada é gravada ao fechar a janela e ao trocar de livro** (antes havia 700 ms de espera, e fechar logo depois perdia a página).
+- **Pasta movida/apagada ou unidade desconectada:** o botão explica o que houve em vez de falhar calado; abrir outro livro com texto não salvo salva o capítulo antes.
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.

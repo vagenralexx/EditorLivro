@@ -45,3 +45,6 @@
 .app-night .book-tools button { color: #d3dfeb; }
 .app-night .book-tools button:hover:not(:disabled) { border-color: #3b5063; background: #1b2a3a; }
 .app-night .book-tools button[aria-pressed="true"] { color: #7bd7e6; border-color: #2f6f80; background: #173443; }
+
+.resume-button { display: grid; gap: 2px; width: 100%; margin-bottom: 8px; text-align: left; }
+.resume-button small { font-weight: 500; opacity: .9; overflow-wrap: anywhere; }
