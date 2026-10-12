@@ -51,6 +51,13 @@ export function ProjectDataDialog({ projectRoot, onClose, onChanged }: ProjectDa
     } catch (reason) { setError(String(reason)); }
   }
 
+  /** Refaz a detecção de pastas na pasta atual (útil depois de atualizar o app ou reorganizar o vault). */
+  async function reanalyse() {
+    if (!location) return;
+    setError("");
+    try { setPending({ path: location.path, mapping: await vaultDetectMapping(location.path) }); } catch (reason) { setError(String(reason)); }
+  }
+
   async function applyLocation(path: string | null, mapping: Record<string, string>) {
     setBusy(true); setError(""); setInfo("");
     try {
@@ -97,7 +104,7 @@ export function ProjectDataDialog({ projectRoot, onClose, onChanged }: ProjectDa
         <h3 className="pd-heading">Pasta do caderno</h3>
         <p className="settings-description pd-tight">Use a pasta que você já tem (por exemplo o vault do Obsidian da trilogia) — as notas continuam suas, o app só lê e escreve nelas quando você pede.</p>
         {!pending && <div className="pd-row"><code>{location?.path ?? "…"}</code><span className="muted">{location?.isDefault ? "padrão do projeto" : location?.exists ? "pasta escolhida" : "pasta não encontrada"}</span></div>}
-        {!pending && <div className="settings-actions pd-actions"><button className="secondary-button" type="button" onClick={() => void chooseFolder()} disabled={busy}>Escolher outra pasta…</button>{!location?.isDefault && <button className="secondary-button" type="button" onClick={() => void applyLocation(null, {})} disabled={busy}>Voltar ao padrão</button>}</div>}
+        {!pending && <div className="settings-actions pd-actions"><button className="secondary-button" type="button" onClick={() => void chooseFolder()} disabled={busy}>Escolher outra pasta…</button><button className="secondary-button" type="button" onClick={() => void reanalyse()} disabled={busy || !location?.exists} title="Reconhece de novo o que cada pasta guarda (ex.: Logs = recaps por capítulo) e mostra para você ajustar antes de aplicar">Reanalisar pastas</button>{!location?.isDefault && <button className="secondary-button" type="button" onClick={() => void applyLocation(null, {})} disabled={busy}>Voltar ao padrão</button>}</div>}
         {pending && <div className="pd-mapping">
           <p><b>{pending.path}</b></p>
           <p className="muted">O app reconheceu estas pastas pelo nome. Ajuste o que cada uma guarda; pastas não listadas continuam sendo lidas como notas comuns.</p>

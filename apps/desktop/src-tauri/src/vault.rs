@@ -53,13 +53,13 @@ impl Kind {
 
 /// Associa pastas do caderno a tipos de nota (prefixo de pasta → tipo).
 #[derive(Debug, Clone, Default)]
-pub struct KindMap { entries: Vec<(String, Kind)> }
+pub struct KindMap { entries: Vec<(String, Kind, String)> }
 
 fn normalize_folder(folder: &str) -> String { folder.replace('\\', "/").trim_matches('/').to_lowercase() }
 
 impl KindMap {
     pub fn from_entries(entries: &BTreeMap<String, String>) -> KindMap {
-        let mut list: Vec<(String, Kind)> = entries.iter().filter_map(|(folder, kind)| Some((normalize_folder(folder), Kind::from_id(kind)?))).filter(|(f, _)| !f.is_empty()).collect();
+        let mut list: Vec<(String, Kind, String)> = entries.iter().filter_map(|(folder, kind)| Some((normalize_folder(folder), Kind::from_id(kind)?, folder.replace('\\', "/").trim_matches('/').to_string()))).filter(|(f, _, _)| !f.is_empty()).collect();
         // Prefixos mais específicos primeiro.
         list.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
         KindMap { entries: list }
@@ -68,14 +68,14 @@ impl KindMap {
     /// Tipo pela pasta da nota (mapeamento do autor; depois os nomes padrão do app).
     pub fn kind_for(&self, rel: &str) -> Option<Kind> {
         let lower = normalize_folder(rel);
-        if let Some((_, kind)) = self.entries.iter().find(|(folder, _)| lower == *folder || lower.starts_with(&format!("{folder}/"))) { return Some(*kind); }
+        if let Some((_, kind, _)) = self.entries.iter().find(|(folder, _, _)| lower == *folder || lower.starts_with(&format!("{folder}/"))) { return Some(*kind); }
         let first = rel.split('/').next()?;
         Kind::ALL.into_iter().find(|k| k.folder() == first)
     }
 
     /// Pasta onde criar notas novas de um tipo: a mais específica mapeada, ou o nome padrão.
     pub fn folder_for(&self, kind: Kind) -> String {
-        self.entries.iter().find(|(_, k)| *k == kind).map(|(folder, _)| folder.clone()).unwrap_or_else(|| kind.folder().to_string())
+        self.entries.iter().find(|(_, k, _)| *k == kind).map(|(_, _, original)| original.clone()).unwrap_or_else(|| kind.folder().to_string())
     }
 }
 
@@ -88,7 +88,7 @@ pub fn detect_mapping(dir: &str) -> BTreeMap<String, String> {
         let has = |words: &[&str]| words.iter().any(|w| tokens.iter().any(|t| if w.len() <= 3 { t == w || *t == format!("{w}s") } else { t.starts_with(w) }));
         if has(&["personag", "ficha", "elenco"]) { Some(Kind::Personagem) }
         else if has(&["biblia"]) { Some(Kind::Biblia) }
-        else if has(&["confli", "revisao", "plot", "twist", "mapa", "registro", "fios", "ancora"]) { Some(Kind::Registro) }
+        else if has(&["confli", "revisao", "plot", "twist", "mapa", "registro", "fios", "ancora", "governanc"]) { Some(Kind::Registro) }
         else if has(&["log", "capitulo", "recap"]) { Some(Kind::Capitulo) }
         else if has(&["lugar", "local"]) { Some(Kind::Lugar) }
         else if has(&["mundo", "regra", "cronologia", "universo"]) { Some(Kind::Mundo) }
@@ -96,21 +96,23 @@ pub fn detect_mapping(dir: &str) -> BTreeMap<String, String> {
         else { None }
     }
     let mut out = BTreeMap::new();
-    fn walk(base: &std::path::Path, rel: &str, depth: usize, out: &mut BTreeMap<String, String>) {
+    // `inherited`: tipo da pasta mapeada mais próxima; subpastas só entram se mudam o tipo (ex.: Logs dentro de Revisão).
+    fn walk(base: &std::path::Path, rel: &str, depth: usize, inherited: Option<Kind>, out: &mut BTreeMap<String, String>) {
         let Ok(entries) = fs::read_dir(base) else { return };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             if name.starts_with('.') || !entry.path().is_dir() { continue; }
             let relative = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
-            if let Some(kind) = guess(&name) { out.insert(relative.clone(), kind.id().to_string()); }
-            else if depth < 2 { walk(&entry.path(), &relative, depth + 1, out); }
+            let guessed = guess(&name);
+            if let Some(kind) = guessed { if Some(kind) != inherited { out.insert(relative.clone(), kind.id().to_string()); } }
+            if depth < 2 { walk(&entry.path(), &relative, depth + 1, guessed.or(inherited), out); }
             // "Fichas" dentro de uma pasta de personagens vira o destino de notas novas.
-            if depth < 2 && guess(&name) == Some(Kind::Personagem) {
+            if depth < 2 && guessed == Some(Kind::Personagem) {
                 if let Ok(inner) = fs::read_dir(entry.path()) { for sub in inner.flatten() { let s = sub.file_name().to_string_lossy().into_owned(); if sub.path().is_dir() && fold(&s).contains("ficha") { out.insert(format!("{relative}/{s}"), "personagem".to_string()); } } }
             }
         }
     }
-    walk(std::path::Path::new(dir), "", 0, &mut out);
+    walk(std::path::Path::new(dir), "", 0, None, &mut out);
     out
 }
 
@@ -246,17 +248,51 @@ pub fn sanitize_title(title: &str) -> Result<String, String> {
 
 /// Arquivos de navegação (índice, matriz, mapa) não são entidades nem bíblias, mesmo dentro da pasta delas.
 fn navigation_kind(stem: &str, from_folder: Kind) -> Kind {
-    if matches!(from_folder, Kind::Capitulo | Kind::Nota) { return from_folder; }
+    if from_folder == Kind::Nota { return from_folder; }
     let folded = fold(&stem.replace(['-', '_'], " "));
     let first = folded.split_whitespace().next().unwrap_or("");
-    match first {
-        "indice" | "index" | "readme" | "moc" | "sumario" => Kind::Nota,
-        "matriz" | "mapa" | "quadro" if from_folder != Kind::Registro => Kind::Registro,
-        _ => from_folder,
-    }
+    if matches!(first, "indice" | "index" | "readme" | "moc" | "sumario") { return Kind::Nota; }
+    // Matrizes e mapas dentro de pastas de personagens/bíblias/lugares… são tabelas de consulta, não a entidade.
+    if matches!(first, "matriz" | "mapa" | "quadro") && !matches!(from_folder, Kind::Registro | Kind::Capitulo) { return Kind::Registro; }
+    from_folder
+}
+
+/// Número do capítulo no fim do nome ("ch20" e "Capitulo-20" → 20).
+pub fn chapter_number(name: &str) -> Option<u32> {
+    let stem = name.rsplit('/').next().unwrap_or(name).trim_end_matches(".md").trim_end_matches(".xhtml").trim_end_matches(".html");
+    let digits: String = stem.chars().rev().take_while(|c| c.is_ascii_digit()).collect::<Vec<_>>().into_iter().rev().collect();
+    if digits.is_empty() || digits.len() > 4 { None } else { digits.parse().ok() }
 }
 
 struct Loaded { meta: NoteMeta, body: String, links: Vec<String> }
+
+const RECAP_START: &str = "<!-- recap-do-app:inicio -->";
+const RECAP_END: &str = "<!-- recap-do-app:fim -->";
+
+/// Nota de recap de um capítulo: pelo nome igual ou, se o vault usa outra convenção
+/// (`ch20.xhtml` × `Capitulo-20.md`), pelo número do capítulo.
+fn find_recap<'a>(notes: &'a [Loaded], stem: &str) -> Option<&'a Loaded> {
+    let caps = || notes.iter().filter(|n| n.meta.kind == Kind::Capitulo);
+    caps().find(|n| n.meta.title.eq_ignore_ascii_case(stem)).or_else(|| { let number = chapter_number(stem)?; caps().find(|n| chapter_number(&n.meta.title) == Some(number)) })
+}
+
+/// Pasta e título para um recap NOVO, seguindo a convenção das notas de capítulo que já existem.
+fn recap_target(notes: &[Loaded], map: &KindMap, stem: &str) -> (String, String) {
+    let default_folder = map.folder_for(Kind::Capitulo);
+    let Some(number) = chapter_number(stem) else { return (default_folder, stem.to_string()) };
+    let mut patterns: HashMap<(String, usize), Vec<&Loaded>> = HashMap::new();
+    for note in notes.iter().filter(|n| n.meta.kind == Kind::Capitulo) {
+        let title = &note.meta.title;
+        let digits: usize = title.chars().rev().take_while(|c| c.is_ascii_digit()).count();
+        if digits == 0 || digits > 4 { continue; }
+        patterns.entry((title[..title.len() - digits].to_string(), digits)).or_default().push(note);
+    }
+    let Some(((prefix, width), group)) = patterns.into_iter().max_by_key(|(_, g)| g.len()).filter(|(_, g)| g.len() >= 3) else { return (default_folder, stem.to_string()) };
+    let mut folders: HashMap<&str, usize> = HashMap::new();
+    for note in &group { *folders.entry(note.meta.path.rsplit_once('/').map(|(f, _)| f).unwrap_or("")).or_default() += 1; }
+    let folder = folders.into_iter().max_by_key(|(_, n)| *n).map(|(f, _)| f.to_string()).unwrap_or(default_folder);
+    (folder, format!("{prefix}{number:0width$}"))
+}
 
 /// Resolve alvos de `[[wikilinks]]`: por caminho (`../04-Personagens/Fichas/Iris`), título ou apelido.
 struct Resolver { by_title: HashMap<String, String>, by_path: Vec<(String, String)> }
@@ -499,7 +535,7 @@ impl Vault {
         let mut recaps = Vec::new();
         for stem in stems.iter().rev() {
             if recaps.len() >= 3 { break; }
-            if let Some(note) = notes.iter().find(|n| n.meta.kind == Kind::Capitulo && n.meta.title.eq_ignore_ascii_case(stem)) {
+            if let Some(note) = find_recap(&notes, stem) {
                 recaps.push(format!("### {}\n{}", note.meta.title, clip(&strip_superseded(&note.body), 1500)));
                 recaps_used.push(note.meta.path.clone());
             }
@@ -570,7 +606,18 @@ impl Vault {
             match resolver.resolve(name.trim()) { Some(path) => format!("[[{}]]", path.rsplit('/').next().unwrap_or(path).trim_end_matches(".md")), None => format!("[[{}]]", name.trim()) }
         };
 
-        let mut body = format!("---\ntipo: capitulo\nordem: {order}\naliases: []\n---\n# {stem}\n\n## Resumo\n{}\n\n## Linha do tempo\n", recap.summary.trim());
+        // Onde o recap vai: nota do autor já existente (acrescenta um bloco), nota do app (substitui) ou nota nova.
+        let (target_rel, target_title, author_note) = match find_recap(&notes, &stem) {
+            Some(existing) => {
+                let text = self.read_note(&existing.meta.path)?;
+                let (front, _) = split_frontmatter(&text);
+                let app_made = front.map(|f| f.lines().any(|l| l.starts_with("gerado-por: editor-de-livros") || l.starts_with("ordem:"))).unwrap_or(false);
+                (existing.meta.path.clone(), existing.meta.title.clone(), !app_made)
+            }
+            None => { let (folder, title) = recap_target(&notes, &self.map, &stem); (format!("{folder}/{}.md", sanitize_title(&title)?), title, false) }
+        };
+        let stem = target_title.clone(); // links [[...]] apontam para a nota de recap de verdade
+        let mut body = format!("## Resumo\n{}\n\n## Linha do tempo\n", recap.summary.trim());
         for e in &recap.timeline { body.push_str(&format!("- {}{}\n", e.event.trim(), if e.scene.trim().is_empty() { String::new() } else { format!(" — {}", e.scene.trim()) })); }
         body.push_str("\n## Estado dos personagens\n");
         for c in &recap.characters {
@@ -603,10 +650,24 @@ impl Vault {
         body.push_str("\n## Alertas para os próximos capítulos\n");
         for a in &recap.alerts { body.push_str(&format!("- ⚠ {}\n", a.trim())); }
 
-        let rel = format!("{}/{stem}.md", self.map.folder_for(Kind::Capitulo));
+        let rel = target_rel;
         let existed = self.note_path(&rel)?.exists();
-        self.write_note(&rel, &body)?;
-        changes.insert(0, Change { path: rel, action: if existed { "recap substituído" } else { "recap criado" } });
+        if author_note {
+            // Nota do autor: nunca é substituída. O recap vai num bloco delimitado, que só este bloco é regravado depois.
+            let current = self.read_note(&rel)?;
+            let demoted = body.replace("\n## ", "\n### ").replacen("## Resumo", "### Resumo", 1);
+            let block = format!("{RECAP_START}\n## Recap do app (gerado por IA — revise)\n{demoted}\n{RECAP_END}\n");
+            let merged = match (current.find(RECAP_START), current.find(RECAP_END)) {
+                (Some(start), Some(end)) if end > start => format!("{}{}{}", &current[..start], block.trim_end_matches('\n'), &current[end + RECAP_END.len()..]),
+                _ => format!("{}\n\n{block}", current.trim_end()),
+            };
+            self.write_note(&rel, &merged)?;
+            changes.insert(0, Change { path: rel, action: "recap acrescentado à nota existente" });
+        } else {
+            let full = format!("---\ntipo: capitulo\nordem: {order}\ngerado-por: editor-de-livros\naliases: []\n---\n# {stem}\n\n{body}");
+            self.write_note(&rel, &full)?;
+            changes.insert(0, Change { path: rel, action: if existed { "recap substituído" } else { "recap criado" } });
+        }
         Ok(changes)
     }
 
@@ -630,11 +691,11 @@ impl Vault {
         for note in self.load_all()?.iter().filter(|n| n.meta.kind == Kind::Capitulo) {
             let text = self.read_note(&note.meta.path)?;
             let (front, body) = split_frontmatter(&text);
-            let order = front.and_then(|f| frontmatter_value(f, "ordem")).and_then(|v| v.parse().ok()).unwrap_or(0);
+            let order = front.and_then(|f| frontmatter_value(f, "ordem")).and_then(|v| v.parse().ok()).or_else(|| chapter_number(&note.meta.title)).unwrap_or(0);
             let mut events = Vec::new();
             let mut inside = false;
             for line in body.lines() {
-                if line.starts_with("## ") { inside = line.trim() == "## Linha do tempo"; continue; }
+                if line.starts_with("## ") || line.starts_with("### ") { inside = line.trim_start_matches('#').trim() == "Linha do tempo"; continue; }
                 if inside { if let Some(item) = line.trim().strip_prefix("- ") { events.push(item.to_string()); } }
             }
             if !events.is_empty() { entries.push(TimelineEntry { chapter: note.meta.title.clone(), order, events }); }
@@ -889,7 +950,7 @@ mod tests {
         assert_eq!(kinds["Registro-de-Conflitos"], Kind::Registro);
         assert_eq!(kinds["Biblia-L1"], Kind::Biblia);
         assert_eq!(kinds["ideia"], Kind::Nota);
-        assert_eq!(vault.map().folder_for(Kind::Personagem), "04-personagens", "novas notas vão para a pasta mapeada");
+        assert_eq!(vault.map().folder_for(Kind::Personagem), "04-Personagens", "novas notas vão para a pasta mapeada");
     }
 
     #[test]
@@ -1065,6 +1126,75 @@ mod tests {
         assert_eq!(map["04-Personagens/Fichas"], "personagem");
         assert_eq!((map["05-Plots"].as_str(), map["07-Revisao"].as_str(), map["Logs"].as_str(), map["03-Mundo"].as_str()), ("registro", "registro", "capitulo", "mundo"));
         assert!(!map.contains_key("02-Trilogia"), "pasta sem palavra-chave fica como Nota");
+    }
+
+    /// Estrutura real do vault do autor (lista de pastas enviada por ele).
+    fn authors_vault() -> (tempfile::TempDir, Vault) {
+        let dir = project();
+        for p in ["01-Biblias", "01-Governanca", "02-Trilogia", "03-Mundo", "04-Personagens/Fichas", "05-Plots", "06-Mapas", "07-Revisao/Arcos/Relatorios", "07-Revisao/Logs/L1", "07-Revisao/Logs/L2", "Arcos", ".obsidian"] { fs::create_dir_all(dir.path().join(p)).unwrap(); }
+        let map = detect_mapping(dir.path().to_str().unwrap());
+        let vault = Vault::new(dir.path().to_str().unwrap(), KindMap::from_entries(&map));
+        (dir, vault)
+    }
+
+    #[test]
+    fn detects_the_authors_real_folder_layout_including_logs_inside_revisao() {
+        let (dir, _) = authors_vault();
+        let map = detect_mapping(dir.path().to_str().unwrap());
+        let kind = |f: &str| map.get(f).map(String::as_str);
+        assert_eq!((kind("01-Biblias"), kind("03-Mundo"), kind("04-Personagens"), kind("05-Plots"), kind("06-Mapas"), kind("07-Revisao")), (Some("biblia"), Some("mundo"), Some("personagem"), Some("registro"), Some("registro"), Some("registro")));
+        assert_eq!(kind("07-Revisao/Logs"), Some("capitulo"), "os recaps por capítulo ficam em Revisão/Logs");
+        assert_eq!(kind("01-Governanca"), Some("registro"), "decisões, movimentações e inventário são registros");
+        assert_eq!(kind("02-Trilogia"), None, "hub dos livros: nota comum");
+        assert_eq!(kind("Arcos"), None);
+        assert_eq!(kind("07-Revisao/Arcos"), None, "herda 'registro' de 07-Revisao; não precisa de entrada própria");
+        assert!(!map.keys().any(|k| k.starts_with('.')), ".obsidian é ignorado");
+    }
+
+    #[test]
+    fn recaps_of_the_author_are_matched_by_chapter_number_and_never_overwritten() {
+        let (_dir, vault) = authors_vault();
+        let own = "# Capítulo 20\n\nLog do autor: tudo que importa.\n\n## Linha do tempo\n- evento do autor\n";
+        for n in 1..=4 { vault.write_note(&format!("07-Revisao/Logs/L1/Capitulo-{n:02}.md"), &if n == 3 { own.to_string() } else { format!("# Capítulo {n}\n\nResumo {n}.\n") }).unwrap(); }
+        vault.write_note("07-Revisao/Logs/Indice.md", "# Índice dos logs\n").unwrap();
+        vault.write_note("07-Revisao/Logs/L1/README.md", "# Leia-me\n").unwrap();
+        let idx = vault.index().unwrap();
+        let kinds: Vec<(&str, Kind)> = idx.notes.iter().filter(|n| n.path.contains("Logs")).map(|n| (n.title.as_str(), n.kind)).collect();
+        assert!(kinds.iter().filter(|(t, _)| t.starts_with("Capitulo-")).all(|(_, k)| *k == Kind::Capitulo), "{kinds:?}");
+        assert!(kinds.iter().filter(|(t, _)| matches!(*t, "Indice" | "README")).all(|(_, k)| *k == Kind::Nota), "índice e leia-me não são recaps: {kinds:?}");
+
+        // Memória: o capítulo ch03.xhtml encontra Capitulo-03.md
+        let memory = vault.memory(&["Texto qualquer.".to_string()], &["ch01.xhtml".to_string(), "ch02.xhtml".to_string(), "ch03.xhtml".to_string()]).unwrap();
+        assert!(memory.recaps_used.iter().any(|p| p.ends_with("Capitulo-03.md")) && memory.recaps_used.len() == 3, "{:?}", memory.recaps_used);
+        assert!(memory.text.contains("Log do autor"));
+
+        let recap = Recap { summary: "A cena.".into(), timeline: vec![TimelineEvent { event: "algo ocorre".into(), scene: String::new() }], characters: vec![], places: vec![], threads_open: vec![], threads_closed: vec![], facts: vec!["fato".into()], alerts: vec![] };
+        let changes = vault.apply_recap("ch03", 3, &recap).unwrap();
+        assert_eq!(changes[0].action, "recap acrescentado à nota existente");
+        let after = vault.read_note("07-Revisao/Logs/L1/Capitulo-03.md").unwrap();
+        assert!(after.starts_with(own.trim_end()), "o texto do autor fica intacto");
+        assert!(after.contains("<!-- recap-do-app:inicio -->") && after.contains("### Resumo\nA cena."));
+        // Reaplicar substitui só o bloco (idempotente).
+        let again = Recap { summary: "Outra versão.".into(), ..recap };
+        vault.apply_recap("ch03", 3, &again).unwrap();
+        let final_text = vault.read_note("07-Revisao/Logs/L1/Capitulo-03.md").unwrap();
+        assert_eq!(final_text.matches("<!-- recap-do-app:inicio -->").count(), 1);
+        assert!(final_text.contains("Outra versão.") && !final_text.contains("A cena.") && final_text.starts_with(own.trim_end()));
+        assert!(vault.timeline().unwrap().iter().any(|e| e.chapter == "Capitulo-03" && e.order == 3 && e.events.iter().any(|x| x == "evento do autor")), "a ordem vem do número quando não há frontmatter");
+    }
+
+    #[test]
+    fn new_recaps_follow_the_vaults_naming_and_folder_convention() {
+        let (_dir, vault) = authors_vault();
+        for n in 1..=3 { vault.write_note(&format!("07-Revisao/Logs/L1/Capitulo-{n:02}.md"), "# x\n").unwrap(); }
+        let recap = Recap { summary: "Novo.".into(), timeline: vec![], characters: vec![], places: vec![], threads_open: vec![], threads_closed: vec![], facts: vec![], alerts: vec![] };
+        let changes = vault.apply_recap("ch07", 7, &recap).unwrap();
+        assert_eq!(changes[0].path, "07-Revisao/Logs/L1/Capitulo-07.md", "mesma pasta, prefixo e zeros do vault");
+        assert_eq!(changes[0].action, "recap criado");
+        let created = vault.read_note("07-Revisao/Logs/L1/Capitulo-07.md").unwrap();
+        assert!(created.contains("gerado-por: editor-de-livros") && created.contains("ordem: 7"));
+        // Reaplicar numa nota gerada pelo app substitui a nota inteira (como antes).
+        assert_eq!(vault.apply_recap("ch07", 7, &recap).unwrap()[0].action, "recap substituído");
     }
 
     #[test]

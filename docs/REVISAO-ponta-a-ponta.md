@@ -159,6 +159,15 @@ Mudanças: layout com **d3-force** (repulsão por quadtree, mola, colisão por r
 - **A última página virada é gravada ao fechar a janela e ao trocar de livro** (antes havia 700 ms de espera, e fechar logo depois perdia a página).
 - **Pasta movida/apagada ou unidade desconectada:** o botão explica o que houve em vez de falhar calado; abrir outro livro com texto não salvo salva o capítulo antes.
 
+## Estrutura real do vault e recaps por capítulo (round 13)
+
+Estrutura enviada pelo autor (`01-Biblias`, `01-Governanca`, `02-Trilogia`, `03-Mundo`, `04-Personagens/Fichas`, `05-Plots`, `06-Mapas`, `07-Revisao/{Arcos,Logs/L1…}`, `Arcos`) passou a ser um teste automático.
+
+- **`07-Revisao/Logs` = recaps por capítulo.** A detecção só olhava o primeiro nível e deixava os 42 `Capitulo-NN` como "registros" (daí os 1618 registros); agora olha dentro das pastas mapeadas e `Logs` vira *capítulo*. **`01-Governanca`** (decisões, movimentações, inventário) vira *registro*. `02-Trilogia`, `Arcos` ficam como nota comum. `Indice` e `README` nunca são recap/registro/entidade. Botão **"Reanalisar pastas"** em *Dados do projeto* refaz a detecção sem trocar de pasta.
+- **`chNN.xhtml` ⇄ `Capitulo-NN.md` casam pelo número.** A memória das análises passa a encontrar o recap do autor de cada capítulo anterior; a linha do tempo usa o número quando a nota não tem `ordem:`.
+- **Recap gerado pela IA nunca substitui uma nota do autor.** Em nota existente do autor vai um bloco delimitado (`<!-- recap-do-app:inicio/fim -->`, "Recap do app — revise"), regravado sozinho nas próximas vezes e sem tocar no resto. Nota nova segue a convenção do vault (mesma pasta, prefixo e zeros: `Capitulo-07`); nota criada pelo app (`gerado-por: editor-de-livros`) continua sendo substituída por inteiro.
+- Pastas novas mantêm a grafia do vault (`07-Revisao/Logs`, não `07-revisao/logs`).
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.
