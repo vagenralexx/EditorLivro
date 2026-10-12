@@ -10,6 +10,7 @@ use std::time::Duration;
 use tauri::Emitter;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod bible;
 mod chat;
 mod glossary;
 mod model_capabilities;
@@ -635,6 +636,75 @@ async fn generate_chapter_recap(app: tauri::AppHandle, input: RecapInput) -> Res
     parse_recap(&raw)
 }
 
+// ---- Bíblia em níveis (série › livro › arco) ----
+
+#[tauri::command]
+fn bible_catalog() -> Vec<serde_json::Value> {
+    bible::SECTIONS.iter().map(|s| json!({ "id": s.id, "title": s.title, "purpose": s.purpose, "format": s.format, "questions": s.questions, "levels": s.levels.iter().map(|l| l.id()).collect::<Vec<_>>() })).collect()
+}
+
+#[tauri::command]
+fn bible_list(root: String) -> Result<Vec<bible::BibleInfo>, String> { bible::list(&vault_for(&root)?) }
+
+#[tauri::command]
+fn bible_create(root: String, level: bible::Level, title: String, book: Option<String>) -> Result<String, String> { bible::create(&vault_for(&root)?, level, &title, book.as_deref()) }
+
+#[tauri::command]
+fn bible_read(root: String, path: String) -> Result<bible::BibleDoc, String> { bible::read(&vault_for(&root)?, &path) }
+
+/// Grava UMA seção (o resto do arquivo não é tocado). `status`: proposto | confirmado | aberto | null.
+#[tauri::command]
+fn bible_write_section(root: String, path: String, section: String, body: String, status: Option<String>) -> Result<bible::BibleDoc, String> {
+    let vault = vault_for(&root)?;
+    safety_snapshot(&root, &vault, "antes-de-editar-biblia");
+    bible::write_section(&vault, &path, &section, &body, status.as_deref())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BibleDraftInput {
+    root: String,
+    path: String,
+    section: String,
+    /// "respostas" (estrutura as anotações do autor) ou "manuscrito" (extrai de trechos).
+    mode: String,
+    #[serde(default)]
+    notes: String,
+    #[serde(default)]
+    text: String,
+    provider: String,
+    model: String,
+    #[serde(default)]
+    reasoning_effort: Option<String>,
+    #[serde(default)]
+    genre: skill::genre::Genre,
+    #[serde(default)]
+    glossary: Vec<String>,
+}
+
+/// Propõe o corpo de uma seção da bíblia. Nada é gravado: o autor revisa e decide.
+#[tauri::command]
+async fn bible_ai_draft(app: tauri::AppHandle, input: BibleDraftInput) -> Result<String, String> {
+    let source = if input.mode == "manuscrito" { input.text.trim() } else { input.notes.trim() };
+    if source.is_empty() { return Err(if input.mode == "manuscrito" { "Selecione ao menos um capítulo com texto." } else { "Escreva suas respostas ou anotações primeiro." }.to_string()); }
+    if source.chars().count() > MAX_ANALYSIS_CHARS { return Err(format!("A fonte passa de {MAX_ANALYSIS_CHARS} caracteres; envie menos capítulos por vez.")); }
+    let vault = vault_for(&input.root)?;
+    let doc = bible::read(&vault, &input.path)?;
+    let current = doc.sections.iter().find(|s| s.title.eq_ignore_ascii_case(&input.section)).or_else(|| doc.sections.iter().find(|s| s.id.as_deref() == Some(input.section.as_str())));
+    let title = current.map(|s| s.title.clone()).or_else(|| bible::SECTIONS.iter().find(|s| s.id == input.section).map(|s| s.title.to_string())).unwrap_or_else(|| input.section.clone());
+    let spec = bible::SECTIONS.iter().find(|s| s.title == title || s.id == input.section);
+    let index = vault.index()?;
+    let names: Vec<String> = index.notes.iter().filter(|n| matches!(n.kind, vault::Kind::Personagem | vault::Kind::Lugar | vault::Kind::Fio)).take(120).map(|n| n.title.clone()).collect();
+    let system = bible::draft_system_prompt(doc.level, &title, spec, &input.mode, input.genre.label(), &names, &input.glossary);
+    let user = format!("<atual>\n{}\n</atual>\n\n<fonte>\n{}\n</fonte>", current.map(|s| s.body.as_str()).unwrap_or(""), source);
+    CANCEL_ANALYSIS.store(false, Ordering::Relaxed);
+    let emit = move |progress: chat::Progress| { let _ = app.emit("ai-progress", progress); };
+    let raw = complete_chat(&emit, &input.provider, &input.model, input.reasoning_effort.as_deref(), &system, &user, 3000, false).await?;
+    let draft = bible::clean_draft(&raw);
+    if draft.is_empty() { return Err("A IA não devolveu texto. Tente de novo ou use outro modelo.".to_string()); }
+    Ok(draft)
+}
+
 // ---- Exemplares com marca d'água (registro de quem recebeu cada código) ----
 
 const COPIES_FILE: &str = ".livro-exemplares.json";
@@ -682,7 +752,7 @@ fn project_state_patch(root: String, section: String, value: serde_json::Value) 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch, bible_catalog, bible_list, bible_create, bible_read, bible_write_section, bible_ai_draft])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 

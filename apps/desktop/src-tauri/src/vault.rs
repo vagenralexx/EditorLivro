@@ -331,6 +331,21 @@ impl Vault {
         Ok(rel)
     }
 
+    /// Caminho de uma nota nova do tipo dado (falha se já existir).
+    pub fn new_note_path(&self, kind: Kind, title: &str) -> Result<String, String> {
+        let title = sanitize_title(title)?;
+        let rel = format!("{}/{title}.md", self.map.folder_for(kind));
+        if self.note_path(&rel)?.exists() { return Err(format!("Já existe uma nota “{title}” em {}.", self.map.folder_for(kind))); }
+        Ok(rel)
+    }
+
+    /// Grava uma nota que ainda não existe (nunca sobrescreve).
+    pub fn write_new(&self, rel: &str, content: &str) -> Result<(), String> {
+        let path = self.note_path(rel)?;
+        if path.exists() { return Err("A nota já existe.".to_string()); }
+        project_files::write_atomic(&path, content.as_bytes())
+    }
+
     pub fn delete_note(&self, rel: &str) -> Result<(), String> {
         let path = self.note_path(rel)?;
         fs::remove_file(&path).map_err(|e| format!("Não foi possível excluir a nota: {e}"))
