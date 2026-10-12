@@ -8,6 +8,9 @@ import { emptyRecord, friendlyModelName, providerFor, providerIds, providers, ty
 import { paragraphTextFromXhtml, textFromXhtml } from "../editor/xhtmlDocument";
 import { VisualXhtmlEditor, type PaginationState, type ReaderTheme } from "../editor/VisualXhtmlEditor";
 import type { EditorialProfileId } from "../editorial/catalog";
+import { FidelityCard } from "../translation/FidelityCard";
+import { OriginalPane } from "../translation/OriginalPane";
+import { originalSliceForPage, useTranslationReview } from "../translation/useTranslationReview";
 import { GenesisCard } from "../skill/GenesisCard";
 import { GlossaryDialog } from "../skill/GlossaryDialog";
 import { ScanPanel } from "../skill/ScanPanel";
@@ -127,6 +130,8 @@ export function WorkspaceDashboard() {
   const [scope, setScope] = useState<"page" | "chapter">("page");
   const [glossary, setGlossary] = useState<string[]>([]);
   const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
+  const [glossaryData, setGlossaryData] = useState<Glossary | null>(null);
+  const [splitView, setSplitView] = useState(true);
   const [genesis, setGenesis] = useState<Genesis | null>(null);
   const [bootstrap, setBootstrap] = useState<AppBootstrap | null>(null);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
@@ -218,6 +223,10 @@ export function WorkspaceDashboard() {
   }, [catalog]);
   const chapterText = useMemo(() => (editorText ? paragraphTextFromXhtml(editorText) : ""), [editorText]);
   const scanOptions = useMemo<ScanOptions>(() => ({ genre: projectSettings.genre, translationMode: projectSettings.translationMode, adultContent: projectSettings.adultContent, isOpening: true }), [projectSettings]);
+  const translatedLines = useMemo(() => (chapterText ? chapterText.split("\n") : []), [chapterText]);
+  const activeIndex = documents.findIndex((document) => document.path === activeDocument?.path);
+  const review = useTranslationReview({ enabled: projectSettings.translationMode, projectRoot, activeName: activeDocument?.name, activeIndex, translatedLines, glossary: glossaryData });
+  const isSplit = projectSettings.translationMode && review.hasOriginal && splitView;
   const wordCount = useMemo(() => {
     const text = textFromXhtml(editorText);
     return text ? text.split(/\s+/u).length : 0;
@@ -287,7 +296,7 @@ export function WorkspaceDashboard() {
       const savedDocument = files.find((file) => file.path === savedPosition?.documentPath);
       setProjectRoot(selected);
       setProjectSettings(loadProjectSettings(selected));
-      glossaryLoad(selected).then((state) => setGlossary(glossaryToLines(state.glossary))).catch(() => setGlossary([]));
+      glossaryLoad(selected).then((state) => { setGlossary(glossaryToLines(state.glossary)); setGlossaryData(state.glossary); }).catch(() => { setGlossary([]); setGlossaryData(null); });
       await loadDocument(savedDocument ?? files[0], savedDocument ? savedPosition?.page : 1);
     } catch (error) {
       await message(String(error), { title: "Não foi possível abrir o projeto", kind: "error" });
@@ -303,13 +312,13 @@ export function WorkspaceDashboard() {
     if (!keyStatus[providerId]) { setAnalysisError("Salve e teste a chave deste provedor em Configurações antes de analisar."); setIsSettingsOpen(true); return; }
     setIsAnalyzing(true); setAnalysisError(""); setAnalysis(""); setFindings([]); setSuggestions([]); setGenesis(null);
     try {
-      const result = await invoke<AnalysisResult>("analyze_open_document", { input: { provider: providerId, model: models[providerId], profile: profileId, text: pageText, reasoningEffort: effortOptions?.configurable ? selectedEffort : null, genre: projectSettings.genre, translationMode: projectSettings.translationMode, adultContent: projectSettings.adultContent, glossary } });
+      const result = await invoke<AnalysisResult>("analyze_open_document", { input: { provider: providerId, model: models[providerId], profile: profileId, text: pageText, reasoningEffort: effortOptions?.configurable ? selectedEffort : null, genre: projectSettings.genre, translationMode: projectSettings.translationMode, adultContent: projectSettings.adultContent, glossary, originalText: profile?.needsOriginal && review.hasOriginal ? (scope === "chapter" ? review.lines : originalSliceForPage(review.lines, pagination.page, pagination.pageCount)).join("\n") : null } });
       setAnalysis(result.summary);
       setFindings(result.findings);
       setSuggestions(result.suggestions);
       setGenesis(result.genesis);
     } catch (error) { setAnalysisError(String(error)); } finally { setIsAnalyzing(false); }
-  }, [editorText, effortOptions, glossary, keyStatus, models, pagination.xhtml, profileId, projectSettings, providerId, scope, selectedEffort]);
+  }, [editorText, effortOptions, glossary, keyStatus, models, pagination.page, pagination.pageCount, pagination.xhtml, profile?.needsOriginal, profileId, projectSettings, providerId, review.hasOriginal, review.lines, scope, selectedEffort]);
 
   const applySuggestion = useCallback((suggestion: EditorialSuggestion) => {
     const before = suggestion.before.trim();
@@ -389,7 +398,7 @@ export function WorkspaceDashboard() {
         <div className="brand"><img src="/editor-livros-epub.png" alt="" className="brand-icon" /><div><strong>Editor de Livros EPUB</strong><span>Local-first · XHTML · EPUB</span></div></div>
         <div className="topbar-actions"><button className="secondary-button" type="button" onClick={() => setIsExportOpen(true)} disabled={!projectRoot} title={projectRoot ? "Gerar o arquivo .epub final" : "Abra um projeto para exportar"}>Exportar EPUB</button><button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurações</button><button className="primary-button" type="button" onClick={openProject} disabled={isOpening}>{isOpening ? "Abrindo…" : "Abrir projeto"}</button></div>
       </header>
-      <div className="workspace-grid">
+      <div className={isSplit ? "workspace-grid split-mode" : "workspace-grid"}>
         <aside className="library-panel" aria-label="Biblioteca do projeto">
           <div className="panel-heading"><span>PROJETO</span><button type="button" className="icon-button" onClick={openProject} aria-label="Abrir projeto XHTML">＋</button></div>
           {!documents.length ? <div className="empty-library"><div className="empty-mark">⌘</div><strong>Nenhum livro aberto</strong><p>Abra a pasta que contém os capítulos XHTML do livro.</p><button className="secondary-button" type="button" onClick={openProject} disabled={isOpening}>Escolher pasta XHTML</button></div> : <div className="project-browser"><strong title={projectRoot}>{fileNameFromPath(projectRoot)}</strong><span>{documents.length} capítulo{documents.length === 1 ? "" : "s"} encontrado{documents.length === 1 ? "" : "s"}</span><div className="chapter-list">{documents.map((document, index) => <button key={document.path} type="button" aria-current={document.path === activeDocument?.path ? "page" : undefined} className={document.path === activeDocument?.path ? "chapter-button active" : "chapter-button"} onClick={() => requestDocument(document)}><span className="chapter-index">{String(index + 1).padStart(2, "0")}</span><span className="chapter-name">{document.name}</span></button>)}</div></div>}
@@ -397,7 +406,12 @@ export function WorkspaceDashboard() {
         </aside>
         <section className="editor-stage" aria-label="Editor e prévia">
           <div className="stage-toolbar"><div><span className="eyebrow">EDIÇÃO VISUAL</span><strong>{activeDocument?.name ?? "Abra um capítulo XHTML"}</strong></div><div className="reader-controls"><span>{wordCount.toLocaleString("pt-BR")} palavras</span><span className="reader-separator" /><button type="button" onClick={() => setFontScale((value) => Math.max(82, value - 8))} aria-label="Diminuir fonte">A−</button><button type="button" onClick={() => setFontScale((value) => Math.min(132, value + 8))} aria-label="Aumentar fonte">A+</button><label className="brightness-control" title="Brilho virtual da página"><span>☀</span><input type="range" min="55" max="115" value={brightness} onChange={(event) => setBrightness(Number(event.target.value))} aria-label="Brilho da página" /></label><button type="button" className="page-theme-button" onClick={() => setReaderTheme((theme) => theme === "warm" ? "paper" : theme === "paper" ? "night" : "warm")} aria-label="Alternar tema da página" title="Tema da página: sépia, claro ou noturno">◐</button><button type="button" className="theme-button" onClick={() => setIsAppDark((enabled) => !enabled)} aria-label="Alternar modo escuro do aplicativo" aria-pressed={isAppDark} title={isAppDark ? "Usar interface clara" : "Usar interface escura"}>{isAppDark ? "☀" : "☾"}</button><button className="save-button" type="button" onClick={saveDocument} disabled={!activeDocument || editorText === savedText || isSaving}>{isSaving ? "Salvando…" : "Salvar"}</button></div></div>
+          <div className={isSplit ? "split-body" : "single-body"} style={isSplit ? undefined : { display: "flex", flex: 1, minHeight: 0, flexDirection: "column" }}>
+            {isSplit && <OriginalPane chapters={review.chapters} index={review.index} isAuto={review.isAuto} onSelect={review.setIndex} sourceLabel={review.sourcePath.split(/[\\/]/u).filter(Boolean).pop() ?? "original"} page={pagination.page} pageCount={pagination.pageCount} report={review.report} />}
+            <div className="split-editor" style={{ display: "flex", flex: 1, minHeight: 0, minWidth: 0, flexDirection: "column" }}>
           <VisualXhtmlEditor documentId={activeDocument?.path} documentName={activeDocument?.name} source={editorText} theme={readerTheme} fontScale={fontScale} brightness={brightness} externalRevision={externalEditorRevision} initialPage={resumePage} onChange={setEditorText} onPaginationChange={updatePagination} hasPreviousChapter={documents.findIndex((document) => document.path === activeDocument?.path) > 0} hasNextChapter={documents.findIndex((document) => document.path === activeDocument?.path) < documents.length - 1} onPreviousChapter={() => moveChapter(-1)} onNextChapter={() => moveChapter(1)} onSaveRequested={saveDocument} />
+            </div>
+          </div>
           <div className="reader-footer"><span>{activeDocument ? editorText === savedText ? "Todas as alterações estão salvas" : "Alterações não gravadas — o XHTML será atualizado quando você salvar" : "Nenhum arquivo carregado"}</span><span>Página {pagination.page} de {pagination.pageCount} · Ctrl + S para salvar</span></div>
         </section>
         <aside className="ai-panel" aria-label="Assistente editorial">
@@ -412,24 +426,33 @@ export function WorkspaceDashboard() {
             <small>{effortOptions?.note || (models[providerId] ? "" : "Selecione um modelo para ver as opções de esforço.")}</small>
           </label>
           <button className="secondary-button settings-link" type="button" onClick={() => setIsSettingsOpen(true)}>Configurar provedor e chave</button>
-          <label className="field-label">PERFIL EDITORIAL<select value={profile?.id ?? profileId} onChange={(event) => changeProfile(event.target.value)} disabled={!catalog}>{catalog ? catalog.profiles.map((item) => <option key={item.id} value={item.id}>{item.label}</option>) : <option>Carregando…</option>}</select></label>
+          <label className="field-label">PERFIL EDITORIAL<select value={profile?.id ?? profileId} onChange={(event) => changeProfile(event.target.value)} disabled={!catalog}>{catalog ? catalog.profiles.map((item) => <option key={item.id} value={item.id} disabled={item.needsOriginal && !review.hasOriginal}>{item.label}{item.needsOriginal && !review.hasOriginal ? " (carregue o original)" : ""}</option>) : <option>Carregando…</option>}</select></label>
           {profile && <div className="profile-card"><span>{scope === "chapter" ? "Capítulo inteiro" : "Página aberta"}</span><strong>{profile.shortLabel}</strong><p>{profile.description}</p><small>{profile.output}</small><small className="tier-hint">Nível de modelo sugerido pela skill: {profile.tier}{profile.tier === "Rápido" ? " (modelos menores respondem mais rápido)" : ""}</small></div>}
           <label className="field-label">ESCOPO DA ANÁLISE<select value={scope} onChange={(event) => setScope(event.target.value as "page" | "chapter")}><option value="page">Página aberta (mais rápido)</option><option value="chapter">Capítulo inteiro (até 60 mil caracteres)</option></select></label>
           <div className="project-settings"><strong>Projeto</strong>
             <label className="field-label">GÊNERO (calibra metas e limiares)<select value={projectSettings.genre} onChange={(event) => setProjectSettings((current) => ({ ...current, genre: event.target.value as GenreId }))}>{catalog?.genres.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             <label className="check"><input type="checkbox" checked={projectSettings.translationMode} onChange={(event) => setProjectSettings((current) => ({ ...current, translationMode: event.target.checked }))} /><span>É tradução EN→PT-BR (alerta suavizações e sugere fluidez)</span></label>
+            {projectSettings.translationMode && <div className="original-source">
+              {review.hasOriginal ? <><small>Original: {review.sourcePath} ({review.chapters.length} capítulos)</small>
+                <label className="check"><input type="checkbox" checked={splitView} onChange={(event) => setSplitView(event.target.checked)} /><span>Tela dividida (original à esquerda)</span></label>
+                <button className="secondary-button" type="button" onClick={review.clear}>Remover original</button></>
+                : <><button className="secondary-button" type="button" onClick={() => void review.choose("epub")} disabled={review.loading}>{review.loading ? "Carregando…" : "Carregar original (EPUB)…"}</button>
+                  <button className="secondary-button" type="button" onClick={() => void review.choose("folder")} disabled={review.loading}>Carregar original (pasta)…</button></>}
+              {review.error && <small role="alert" style={{ color: "#a3404d" }}>{review.error}</small>}
+            </div>}
             <label className="check"><input type="checkbox" checked={projectSettings.adultContent} onChange={(event) => setProjectSettings((current) => ({ ...current, adultContent: event.target.checked }))} /><span>Contém cenas adultas (preservar intensidade, sem suavizar)</span></label>
             {glossary.length > 0 && <p className="glossary-chip">✓ glossário com {glossary.length} entradas enviado à IA</p>}
             <button className="secondary-button" type="button" disabled={!projectRoot} onClick={() => setIsGlossaryOpen(true)}>{glossary.length > 0 ? "Editar glossário…" : "Criar glossário…"}</button>
           </div>
           <button className="primary-button wide-button" type="button" onClick={analyzeDocument} disabled={isAnalyzing || !activeDocument}>{isAnalyzing ? (scope === "chapter" ? "Analisando capítulo…" : `Analisando página ${pagination.page}…`) : (scope === "chapter" ? "Analisar capítulo" : `Analisar página ${pagination.page}`)}</button>{isAnalyzing && <div className="analysis-progress" role="status" aria-live="polite"><span>{progressLabel(aiProgress)}</span><button type="button" className="discard-button" onClick={() => void invoke("cancel_ai_analysis")}>Cancelar</button></div>}<p className="privacy-note">Apenas o trecho analisado (página ou capítulo, conforme o escopo) é enviado ao provedor escolhido. A chave nunca entra no XHTML ou EPUB.</p>
           {genesis && <GenesisCard genesis={genesis} genreLabel={genreLabel} />}{(analysisError || analysis || findings.length > 0 || suggestions.length > 0) && <section className={analysisError ? "analysis-result error" : "analysis-result"} aria-live="polite"><strong>{analysisError ? "Não foi possível analisar" : "Resultado da análise"}</strong>{analysisError ? <p>{analysisError}</p> : <>{analysis && <p className="analysis-summary">{analysis}</p>}{findings.length > 0 && <div className="finding-list"><span className="finding-heading">Achados editoriais</span>{findings.map((finding, index) => <article className="finding-card" key={`${finding.title}-${index}`}><header><strong>{finding.title}</strong><span className={`severity ${finding.severity.toLocaleLowerCase("pt-BR")}`}>{finding.severity}</span></header><p>{finding.detail}</p>{finding.anchor && <blockquote><strong>Trecho:</strong> “{finding.anchor}”</blockquote>}</article>)}</div>}{suggestions.length > 0 && <div className="suggestion-list"><span className="suggestion-heading">Sugestões aplicáveis</span>{suggestions.map((suggestion, index) => <article className="suggestion-card" key={`${suggestion.before}-${index}`}><div><strong>Antes — texto atual</strong><del>{suggestion.before}</del></div><div><strong>Depois — proposta</strong><ins>{suggestion.after}</ins></div><small>{suggestion.reason}</small><button type="button" onClick={() => applySuggestion(suggestion)}>Aplicar sugestão</button></article>)}</div>}</>}</section>}
+          {projectSettings.translationMode && review.report && <FidelityCard report={review.report} />}
           <ScanPanel text={chapterText} options={scanOptions} genreLabel={genreLabel} onApplyFluency={(fix) => applySuggestion({ before: fix.before, after: fix.after, reason: fix.reason })} />
           <div className="module-row"><span>Módulos do núcleo</span><strong>{bootstrap ? `${bootstrap.modules.length} preparados` : "carregando"}</strong></div>
         </aside>
       </div>
       {isSettingsOpen && <AiSettingsDialog activeProviderId={providerId} models={models} availableModels={availableModels} keyStatus={keyStatus} onClose={() => setIsSettingsOpen(false)} onProviderChange={setProviderId} onModelChange={(id, model) => setModels((current) => ({ ...current, [id]: model }))} onModelsLoaded={(id, loadedModels) => setAvailableModels((current) => ({ ...current, [id]: loadedModels }))} onKeyStatusChange={updateKeyStatus} />}
-      {isGlossaryOpen && <GlossaryDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} onClose={() => setIsGlossaryOpen(false)} onSaved={(saved: Glossary) => setGlossary(glossaryToLines(saved))} />}
+      {isGlossaryOpen && <GlossaryDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} onClose={() => setIsGlossaryOpen(false)} onSaved={(saved: Glossary) => { setGlossary(glossaryToLines(saved)); setGlossaryData(saved); }} />}
       {isExportOpen && <ExportEpubDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} hasUnsavedChanges={Boolean(activeDocument) && editorText !== savedText} onClose={() => setIsExportOpen(false)} />}
       {pendingDocument && <div className="transition-modal-backdrop" role="presentation"><section className="transition-modal" role="dialog" aria-modal="true" aria-labelledby="save-changes-title"><span className="transition-icon">✦</span><div><span className="eyebrow">ALTERAÇÕES PENDENTES</span><h2 id="save-changes-title">Salvar edições e continuar?</h2><p>Você editou <strong>{activeDocument?.name}</strong>. O próximo capítulo será aberto somente depois de salvar ou descartar estas alterações.</p></div><div className="transition-actions"><button type="button" className="secondary-button" onClick={() => setPendingDocument(null)} disabled={isSaving}>Cancelar</button><button type="button" className="discard-button" onClick={discardAndContinue} disabled={isSaving}>Descartar e continuar</button><button type="button" className="primary-button" onClick={() => void saveAndContinue()} disabled={isSaving}>{isSaving ? "Salvando…" : "Salvar edições e continuar"}</button></div><small>Um backup do XHTML atual é criado automaticamente.</small></section></div>}
     </main>

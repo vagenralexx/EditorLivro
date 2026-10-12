@@ -12,6 +12,8 @@ export interface SkillProfile {
   /** Nível de modelo sugerido pela skill. */
   tier: "Rápido" | "Padrão" | "Máximo";
   suggestedScope: "page" | "chapter";
+  /** Só funciona com o texto original carregado (revisão 1:1). */
+  needsOriginal: boolean;
 }
 export interface PatternInfo { id: number; name: string; detectable: boolean; }
 export interface SkillCatalog { genres: GenreInfo[]; profiles: SkillProfile[]; patterns: PatternInfo[]; }
@@ -64,3 +66,16 @@ export function glossaryToLines(data: Glossary): string[] {
   for (const [raw, equivalents] of Object.entries(data.palavroes)) lines.push(`Linguagem crua: “${raw}” deve virar ${equivalents.join(" / ")} (sem suavizar)`);
   return lines.slice(0, 100);
 }
+
+// ---- Revisão de tradução em duas telas ----
+export interface ChapterText { name: string; lines: string[]; }
+export interface ParagraphFlag { index: number; kind: "omissao" | "adicao"; ratio: number; original: string; translated: string; }
+export interface TermCheck { term: string; original: number; translated: number; status: string; }
+export interface RawCheck { raw: string; equivalents: string[]; original: number; translated: number; status: string; }
+export interface FidelityReport {
+  originalParagraphs: number; translatedParagraphs: number; originalDialogues: number; translatedDialogues: number;
+  originalWords: number; translatedWords: number; expansion: number; aligned: boolean;
+  flags: ParagraphFlag[]; terms: TermCheck[]; rawLanguage: RawCheck[]; notes: string[];
+}
+export const originalLoad = (path: string) => invoke<ChapterText[]>("original_load", { path });
+export const compareTranslation = (original: string[], translated: string[], glossary: Glossary) => invoke<FidelityReport>("compare_translation", { original, translated, glossary });

@@ -3,3 +3,4 @@ pub mod genre;
 pub mod scan;
 pub mod genesis;
 pub mod prompts;
+pub mod fidelity;
