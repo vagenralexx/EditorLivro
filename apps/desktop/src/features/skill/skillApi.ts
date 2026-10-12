@@ -14,6 +14,8 @@ export interface SkillProfile {
   suggestedScope: "page" | "chapter";
   /** Só funciona com o texto original carregado (revisão 1:1). */
   needsOriginal: boolean;
+  /** Recebe a memória do caderno (recaps e notas) quando ela existe. */
+  usesMemory: boolean;
 }
 export interface PatternInfo { id: number; name: string; detectable: boolean; }
 export interface SkillCatalog { genres: GenreInfo[]; profiles: SkillProfile[]; patterns: PatternInfo[]; }
