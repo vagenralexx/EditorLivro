@@ -15,7 +15,7 @@ export const kindInfo: Record<NoteKind, { label: string; plural: string; color: 
 };
 export const kindOrder: NoteKind[] = ["personagem", "lugar", "fio", "evento", "mundo", "biblia", "registro", "capitulo", "nota"];
 
-export interface NoteMeta { path: string; title: string; kind: NoteKind; aliases: string[]; words: number; modified: number; state: string | null; }
+export interface NoteMeta { heading: string | null; path: string; title: string; kind: NoteKind; aliases: string[]; words: number; modified: number; state: string | null; }
 export type RecordStatus = "aberto" | "resolvido" | "supersedido";
 export interface RecordSummary { id: string; prefix: string; title: string; note: string; line: number; status: RecordStatus | null; occurrences: number; }
 export interface RecordRow { id: string; prefix: string; note: string; line: number; headers: string[]; cells: string[]; status: RecordStatus | null; }

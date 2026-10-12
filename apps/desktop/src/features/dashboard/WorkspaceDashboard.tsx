@@ -9,6 +9,8 @@ import { paragraphTextFromXhtml, textFromXhtml } from "../editor/xhtmlDocument";
 import { VisualXhtmlEditor, type PaginationState, type ReaderTheme } from "../editor/VisualXhtmlEditor";
 import type { EditorialProfileId } from "../editorial/catalog";
 import { isProjectBroken, loadProject, patchProject, toStoredPath } from "../project/projectStore";
+import { ReplaceDialog } from "../replace/ReplaceDialog";
+import { samePath } from "../replace/replaceApi";
 import { NotebookDialog } from "../notebook/NotebookDialog";
 import { vaultMemory } from "../notebook/notebookApi";
 import { FidelityCard } from "../translation/FidelityCard";
@@ -111,6 +113,7 @@ export function WorkspaceDashboard() {
   const [glossary, setGlossary] = useState<string[]>([]);
   const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
   const [isNotebookOpen, setIsNotebookOpen] = useState(false);
+  const [isReplaceOpen, setIsReplaceOpen] = useState(false);
   const [memoryNote, setMemoryNote] = useState("");
   const [glossaryData, setGlossaryData] = useState<Glossary | null>(null);
   const [splitView, setSplitView] = useState(true);
@@ -356,6 +359,16 @@ export function WorkspaceDashboard() {
     }
   }, [activeDocument, editorText, savedText]);
 
+  // Substituir no livro grava em disco: o capítulo aberto é salvo antes e recarregado depois.
+  const openReplace = useCallback(async () => {
+    if (activeDocument && editorText !== savedText && !(await saveDocument())) return;
+    setIsReplaceOpen(true);
+  }, [activeDocument, editorText, saveDocument, savedText]);
+
+  const onChapterFilesChanged = useCallback((changed: string[]) => {
+    if (activeDocument && changed.some((path) => samePath(path, activeDocument.path))) void loadDocument(activeDocument, pagination.page);
+  }, [activeDocument, loadDocument, pagination.page]);
+
   const requestDocument = useCallback((document: ProjectDocument) => {
     if (document.path === activeDocument?.path) return;
     if (activeDocument && editorText !== savedText) {
@@ -453,6 +466,7 @@ export function WorkspaceDashboard() {
             <label className="check"><input type="checkbox" checked={projectSettings.useMemory} onChange={(event) => setProjectSettings((current) => ({ ...current, useMemory: event.target.checked }))} /><span>Usar a memória do caderno nas análises que a pedem</span></label>
             <label className="check"><input type="checkbox" checked={projectSettings.adultContent} onChange={(event) => setProjectSettings((current) => ({ ...current, adultContent: event.target.checked }))} /><span>Contém cenas adultas (preservar intensidade, sem suavizar)</span></label>
             {glossary.length > 0 && <p className="glossary-chip">✓ glossário com {glossary.length} entradas enviado à IA</p>}
+            <button className="secondary-button" type="button" disabled={!projectRoot || documents.length === 0} onClick={() => void openReplace()} title="Troca palavras inteiras (ex.: nome de personagem) com prévia e desfazer">Substituir no livro…</button>
             <button className="secondary-button" type="button" disabled={!projectRoot} onClick={() => setIsGlossaryOpen(true)}>{glossary.length > 0 ? "Editar glossário…" : "Criar glossário…"}</button>
           </div>
           <button className="primary-button wide-button" type="button" onClick={analyzeDocument} disabled={isAnalyzing || !activeDocument}>{isAnalyzing ? (scope === "chapter" ? "Analisando capítulo…" : `Analisando página ${pagination.page}…`) : (scope === "chapter" ? "Analisar capítulo" : `Analisar página ${pagination.page}`)}</button>{isAnalyzing && <div className="analysis-progress" role="status" aria-live="polite"><span>{progressLabel(aiProgress)}</span><button type="button" className="discard-button" onClick={() => void invoke("cancel_ai_analysis")}>Cancelar</button></div>}<p className="privacy-note">Apenas o trecho analisado (página ou capítulo, conforme o escopo) é enviado ao provedor escolhido. A chave nunca entra no XHTML ou EPUB.</p>
@@ -464,6 +478,7 @@ export function WorkspaceDashboard() {
       </div>
       {isSettingsOpen && <AiSettingsDialog activeProviderId={providerId} models={models} availableModels={availableModels} keyStatus={keyStatus} onClose={() => setIsSettingsOpen(false)} onProviderChange={setProviderId} onModelChange={(id, model) => setModels((current) => ({ ...current, [id]: model }))} onModelsLoaded={(id, loadedModels) => setAvailableModels((current) => ({ ...current, [id]: loadedModels }))} onKeyStatusChange={updateKeyStatus} />}
       {isNotebookOpen && <NotebookDialog projectRoot={projectRoot} chapters={documents} activeChapterIndex={Math.max(activeIndex, 0)} activeChapterLines={translatedLines} ai={{ providerId, model: models[providerId], reasoningEffort: effortOptions?.configurable ? selectedEffort : null, ready: Boolean(keyStatus[providerId] && models[providerId]) }} genre={projectSettings.genre} glossaryLines={glossary} glossaryData={glossaryData} onClose={() => setIsNotebookOpen(false)} onChanged={() => setMemoryNote("")} />}
+      {isReplaceOpen && <ReplaceDialog projectRoot={projectRoot} chapters={documents} activeChapterIndex={Math.max(activeIndex, 0)} onClose={() => setIsReplaceOpen(false)} onChapterFilesChanged={onChapterFilesChanged} onVaultChanged={() => { setMemoryNote(""); glossaryLoad(projectRoot).then((state) => { setGlossary(glossaryToLines(state.glossary)); setGlossaryData(state.glossary); }).catch(() => undefined); }} />}
       {isGlossaryOpen && <GlossaryDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} onClose={() => setIsGlossaryOpen(false)} onSaved={(saved: Glossary) => { setGlossary(glossaryToLines(saved)); setGlossaryData(saved); }} />}
       {isExportOpen && <ExportEpubDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} hasUnsavedChanges={Boolean(activeDocument) && editorText !== savedText} onClose={() => setIsExportOpen(false)} />}
       {pendingDocument && <div className="transition-modal-backdrop" role="presentation"><section className="transition-modal" role="dialog" aria-modal="true" aria-labelledby="save-changes-title"><span className="transition-icon">✦</span><div><span className="eyebrow">ALTERAÇÕES PENDENTES</span><h2 id="save-changes-title">Salvar edições e continuar?</h2><p>Você editou <strong>{activeDocument?.name}</strong>. O próximo capítulo será aberto somente depois de salvar ou descartar estas alterações.</p></div><div className="transition-actions"><button type="button" className="secondary-button" onClick={() => setPendingDocument(null)} disabled={isSaving}>Cancelar</button><button type="button" className="discard-button" onClick={discardAndContinue} disabled={isSaving}>Descartar e continuar</button><button type="button" className="primary-button" onClick={() => void saveAndContinue()} disabled={isSaving}>{isSaving ? "Salvando…" : "Salvar edições e continuar"}</button></div><small>Um backup do XHTML atual é criado automaticamente.</small></section></div>}

@@ -146,7 +146,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   const outgoing = (index?.edges ?? []).filter((edge) => edge.from === selected).map((edge) => byPath.get(edge.to)).filter((note): note is NoteMeta => Boolean(note));
   const broken = (index?.unresolved ?? []).filter((item) => item.from === selected);
   const myMentions = mentions.find((item) => item.path === selected);
-  const filtered = notes.filter((note) => !query || `${note.title} ${note.aliases.join(" ")}`.toLowerCase().includes(query.toLowerCase()));
+  const filtered = notes.filter((note) => !query || `${note.title} ${note.heading ?? ""} ${note.aliases.join(" ")}`.toLowerCase().includes(query.toLowerCase()));
 
   // Grafo: nós = notas visíveis; arestas = links entre elas.
   const visibleNotes = notes.filter((note) => !hiddenKinds.has(note.kind));
@@ -206,13 +206,13 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
               <div><button className="primary-button" type="submit" disabled={!creating.title.trim()}>Criar</button><button className="secondary-button" type="button" onClick={() => setCreating(null)}>Cancelar</button></div></form>
               : <button className="secondary-button" type="button" onClick={() => setCreating({ kind: "personagem", title: "" })}>＋ Nova nota</button>}
             <div className="notebook-groups">{kindOrder.map((kind) => { const group = filtered.filter((note) => note.kind === kind); if (!group.length) return null; return <details key={kind} open><summary><span className="kind-dot" style={{ background: kindInfo[kind].color }} />{kindInfo[kind].plural} <small>{group.length}</small></summary>
-              <ul>{group.map((note) => <li key={note.path}><button type="button" className={note.path === selected ? "active" : ""} onClick={() => void open(note.path)}>{note.title}{note.state === "fechado" && <small className="closed"> ✓ fechado</small>}</button></li>)}</ul></details>; })}</div>
+              <ul>{group.map((note) => <li key={note.path}><button type="button" className={note.path === selected ? "active" : ""} onClick={() => void open(note.path)} title={note.path}>{note.heading ?? note.title}{note.state === "fechado" && <small className="closed"> ✓ fechado</small>}</button></li>)}</ul></details>; })}</div>
           </aside>
           <main className="notebook-main">
             {!selectedMeta ? <p className="notebook-hint">Selecione uma nota à esquerda ou crie uma nova. Clique em um <span className="wikilink">[[link]]</span> para navegar entre as notas.</p> : <>
               <div className="note-head">
                 {renaming !== null ? <form onSubmit={(event) => { event.preventDefault(); void renameSelected(renaming); }}><input autoFocus value={renaming} onChange={(event) => setRenaming(event.target.value)} /><button className="primary-button" type="submit">Renomear</button><button className="secondary-button" type="button" onClick={() => setRenaming(null)}>Cancelar</button></form>
-                  : <><h3><span className="kind-dot" style={{ background: kindInfo[selectedMeta.kind].color }} />{selectedMeta.title}</h3><small>{kindInfo[selectedMeta.kind].label}{selectedMeta.aliases.length ? ` · também: ${selectedMeta.aliases.join(", ")}` : ""} · {dirty ? "salvando…" : "salvo"}</small></>}
+                  : <><h3><span className="kind-dot" style={{ background: kindInfo[selectedMeta.kind].color }} />{selectedMeta.heading ?? selectedMeta.title}</h3><small>{kindInfo[selectedMeta.kind].label}{selectedMeta.aliases.length ? ` · também: ${selectedMeta.aliases.join(", ")}` : ""} · {dirty ? "salvando…" : "salvo"}</small></>}
                 <div className="note-tools">
                   <button type="button" className={mode === "preview" ? "active" : ""} onClick={() => setMode("preview")}>Ler</button>
                   <button type="button" className={mode === "edit" ? "active" : ""} onClick={() => setMode("edit")}>Editar</button>

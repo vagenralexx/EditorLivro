@@ -37,7 +37,7 @@ impl Kind {
     pub fn template(self, title: &str) -> String {
         let head = format!("---\ntipo: {}\naliases: []\n{}---\n# {title}\n\n", self.id(), if self == Kind::Fio { "estado: aberto\n" } else { "" });
         let body = match self {
-            Kind::Personagem => "**Papel:** \n**Ferida central:** \n**Desejo consciente:** \n**Necessidade inconsciente:** \n**Obsessão irrelevante:** \n**Distorção cognitiva:** \n**Vício de linguagem:** \n**O que evita dizer:** \n**Sob pressão máxima:** \n**Maior contradição:** \n\n## Estado atual\n\n## Aparições\n",
+            Kind::Personagem => "## Ficha técnica\n\n| Campo | Registro |\n|---|---|\n| Nome | |\n| Idade | |\n| Data de nascimento | |\n| Características | |\n| Personalidade | |\n\n## Vida própria\n\n**Desejo:** \n**Medo:** \n**Segredo:** \n**Contradição:** \n**Relação com a protagonista:** \n**Arco:** \n**Ferida central:** \n**Necessidade inconsciente:** \n**Distorção cognitiva:** \n**Vício de linguagem:** \n**O que evita dizer:** \n**Sob pressão máxima:** \n\n## Aparições e momentos\n\n## Arco e conexões\n",
             Kind::Lugar => "**Descrição sensorial:** \n**Regras / o que acontece aqui:** \n\n## Aparições\n",
             Kind::Fio => "**Descrição do fio:** \n**Aberto em:** \n**Fechado em:** \n\n## Desenvolvimento\n",
             Kind::Evento => "**Quando (ordem cronológica):** \n**Onde:** \n**Quem sabe disso:** \n**Consequências:** \n",
@@ -125,6 +125,8 @@ pub fn fold(text: &str) -> String {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteMeta {
+    /// Primeiro título `# …` da nota (ex.: "Eugênio Castelo" num arquivo `Eugenio-Castelo.md`), para exibir.
+    pub heading: Option<String>,
     /// Caminho relativo ao caderno (ex.: `04-Personagens/Fichas/Iris-Barbosa.md`).
     pub path: String,
     pub title: String,
@@ -242,6 +244,14 @@ pub fn sanitize_title(title: &str) -> Result<String, String> {
     Ok(cleaned.chars().take(100).collect())
 }
 
+/// Arquivos de navegação (índice, matriz, mapa) não são entidades mesmo dentro da pasta delas.
+fn navigation_kind(stem: &str, from_folder: Kind) -> Kind {
+    if !matches!(from_folder, Kind::Personagem | Kind::Lugar | Kind::Fio | Kind::Evento | Kind::Mundo) { return from_folder; }
+    let folded = fold(&stem.replace(['-', '_'], " "));
+    let first = folded.split_whitespace().next().unwrap_or("");
+    match first { "indice" | "index" | "readme" | "moc" | "sumario" => Kind::Nota, "matriz" | "mapa" | "quadro" => Kind::Registro, _ => from_folder }
+}
+
 struct Loaded { meta: NoteMeta, body: String, links: Vec<String> }
 
 /// Resolve alvos de `[[wikilinks]]`: por caminho (`../04-Personagens/Fichas/Iris`), título ou apelido.
@@ -304,11 +314,14 @@ impl Vault {
                 if !name.ends_with(".md") || meta.len() > MAX_NOTE_BYTES || out.len() >= MAX_NOTES { continue; }
                 let text = fs::read_to_string(entry.path()).map_err(|e| format!("Não foi possível ler {rel}: {e}"))?;
                 let (front, body) = split_frontmatter(&text);
-                let kind = front.and_then(|f| frontmatter_value(f, "tipo")).and_then(Kind::from_id).or_else(|| self.map.kind_for(&rel)).unwrap_or(Kind::Nota);
+                let stem = name.trim_end_matches(".md");
+                let declared = front.and_then(|f| frontmatter_value(f, "tipo")).and_then(Kind::from_id);
+                // Índices e matrizes dentro da pasta de personagens/lugares não são personagens/lugares.
+                let kind = declared.or_else(|| self.map.kind_for(&rel).map(|k| navigation_kind(stem, k))).unwrap_or(Kind::Nota);
                 let links = wikilink().captures_iter(body).map(|c| c[1].trim().to_string()).collect();
                 let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
                 out.push(Loaded {
-                    meta: NoteMeta { title: rel.rsplit('/').next().unwrap_or(&rel).trim_end_matches(".md").to_string(), path: rel, kind, aliases: front.map(parse_aliases).unwrap_or_default(), words: body.split_whitespace().count(), modified, state: front.and_then(|f| frontmatter_value(f, "estado")).map(str::to_string) },
+                    meta: NoteMeta { heading: body.lines().find_map(|l| l.strip_prefix("# ").map(|t| t.trim().to_string())).filter(|t| !t.is_empty()), title: rel.rsplit('/').next().unwrap_or(&rel).trim_end_matches(".md").to_string(), path: rel, kind, aliases: front.map(parse_aliases).unwrap_or_default(), words: body.split_whitespace().count(), modified, state: front.and_then(|f| frontmatter_value(f, "estado")).map(str::to_string) },
                     body: body.to_string(), links,
                 });
             }
@@ -848,6 +861,24 @@ mod tests {
     }
 
     #[test]
+    fn index_and_matrix_files_in_the_character_folder_are_not_characters() {
+        let dir = project();
+        let mut entries = BTreeMap::new();
+        entries.insert("04-Personagens".to_string(), "personagem".to_string());
+        let vault = Vault::new(dir.path().to_str().unwrap(), KindMap::from_entries(&entries));
+        vault.write_note("04-Personagens/Indice.md", "# Índice de Personagens\n").unwrap();
+        vault.write_note("04-Personagens/Matriz-de-Relacoes.md", "# Matriz\n").unwrap();
+        vault.write_note("04-Personagens/Fichas/Eugenio-Castelo.md", "# Eugênio Castelo\n").unwrap();
+        let idx = vault.index().unwrap();
+        let kind = |t: &str| idx.notes.iter().find(|n| n.title == t).unwrap().kind;
+        assert_eq!((kind("Indice"), kind("Matriz-de-Relacoes")), (Kind::Nota, Kind::Registro));
+        assert_eq!(idx.notes.iter().find(|n| n.title == "Eugenio-Castelo").unwrap().heading.as_deref(), Some("Eugênio Castelo"));
+        assert_eq!(kind("Eugenio-Castelo"), Kind::Personagem);
+        // "índice" no texto do capítulo não puxa a nota de índice para a memória.
+        assert!(!vault.memory(&["O índice do livro.".to_string()], &[]).unwrap().notes_used.iter().any(|n| n.contains("Indice")));
+    }
+
+    #[test]
     fn add_aliases_handles_inline_block_missing_and_no_frontmatter() {
         let n = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(add_aliases("---\ntipo: personagem\naliases: []\n---\n# X\n", &n(&["Jordan"])), "---\ntipo: personagem\naliases: [Jordan]\n---\n# X\n");
@@ -963,7 +994,7 @@ mod tests {
     fn real_vault_end_to_end_report() {
         let fixtures = std::env::var("LIVRO_FIXTURE_DIR").expect("defina LIVRO_FIXTURE_DIR");
         let dir = project();
-        for (file, rel) in [("182635df-Biblia-L1-A-Cura.md", "01-Biblias/Biblia-L1-A-Cura.md"), ("1f7cb255-Registro-de-Conflitos-de-Fonte.md", "07-Revisao/Registro-de-Conflitos-de-Fonte.md"), ("b4d13cf7-Plottwists-L1.md", "05-Plots/Plottwists-L1.md")] {
+        for (file, rel) in [("182635df-Biblia-L1-A-Cura.md", "01-Biblias/Biblia-L1-A-Cura.md"), ("1f7cb255-Registro-de-Conflitos-de-Fonte.md", "07-Revisao/Registro-de-Conflitos-de-Fonte.md"), ("b4d13cf7-Plottwists-L1.md", "05-Plots/Plottwists-L1.md"), ("8114a467-Eugenio-Castelo.md", "04-Personagens/Fichas/Eugenio-Castelo.md"), ("955f70e0-Matriz-de-Relacoes.md", "04-Personagens/Matriz-de-Relacoes.md"), ("26bbd4b0-Indice.md", "04-Personagens/Indice.md"), ("9aa13957-Regras-Canonicas.md", "03-Mundo/Regras-Canonicas.md"), ("1ed8972a-Cronologia-Canonica.md", "03-Mundo/Cronologia-Canonica.md")] {
             let target = dir.path().join(rel);
             fs::create_dir_all(target.parent().unwrap()).unwrap();
             fs::copy(std::path::Path::new(&fixtures).join(file), target).unwrap();
@@ -984,5 +1015,14 @@ mod tests {
         println!("--- MEMÓRIA ({} caracteres) ---\n{}", ctx.text.chars().count(), ctx.text);
         println!("--- usados: {:?}", ctx.notes_used);
         assert!(!ctx.text.contains("proporcional à complexidade"), "a regra supersedida da seção 6 não pode entrar");
+        // Substituição de nome sobre o vault real (só prévia, nada é gravado).
+        let opts = crate::replace::Options { ignore_accents: false, preserve_case: true };
+        for (rel, text) in vault.raw_notes().unwrap().iter().map(|(m, t)| (m.path.clone(), t.clone())) {
+            let (_, r) = crate::replace::replace_in_markdown(&text, "Caio", "Jordan", opts);
+            if r.count > 0 || r.partial > 0 { println!("Caio→Jordan em {rel}: {} (parecidas {})", r.count, r.partial); }
+        }
+        let eugenio = vault.read_note("04-Personagens/Fichas/Eugenio-Castelo.md").unwrap();
+        let (out, r) = crate::replace::replace_in_markdown(&eugenio, "Eugênio", "Mateus", opts);
+        println!("Eugênio→Mateus na ficha: {} ocorrência(s); links preservados: {}", r.count, out.matches("[[../../").count() == eugenio.matches("[[../../").count());
     }
 }

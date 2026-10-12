@@ -82,6 +82,19 @@ Dados antigos do `localStorage` são migrados uma vez (e só apagados depois de 
 - Preenchimento: (1) manual, guiado por *para que serve / formato / perguntas* de cada seção; (2) IA **a partir das suas respostas** (só estrutura, não inventa); (3) IA **a partir do manuscrito**, em blocos de ~40 mil caracteres acumulando o rascunho. A IA só propõe; você revisa/edita e aplica.
 - Ainda não feito: importar bíblia de `.docx`, séries com vários livros no mesmo vault com herança entre níveis na memória, e "bíblia compilada" como visão gerada.
 
+## Substituir no livro (round 6)
+
+"Substituir no livro…" (barra lateral): troca **palavras inteiras** no capítulo aberto ou no livro todo.
+
+- Palavra inteira: "Caio" não mexe em "Caiozinho"/"Caios" (elas são contadas e listadas como "parecidas, ignoradas"). A caixa acompanha o original (Caio→Jordan, caio→jordan, CAIO→JORDAN); acentos exatos por padrão (opção para ignorar).
+- Só **texto**: em XHTML nunca toca tags, atributos (`id`, `class`, `href`), comentários, `<script>`/`<style>` ou entidades. Em Markdown preserva alvos de `[[links]]`, código e URLs; `[[Caio Barbosa]]` vira `[[Caio Barbosa|Jordan Barbosa]]` (o link continua apontando para a mesma ficha).
+- Desempenho: o livro inteiro é rápido (texto puro; a análise lê os arquivos e conta, sem gravar). O risco de "livro todo" não é peso e sim erro/irreversibilidade, por isso: prévia por capítulo com amostras, seleção capítulo a capítulo, confirmação, backup e desfazer.
+- Impacto na história: lista fichas, bíblia, registros, recaps e glossário que citam o termo, cada um com contagem e caixa de seleção; a ficha do nome recebe a opção de ganhar o nome novo como **apelido** (senão a memória deixaria de reconhecê-la nos capítulos).
+- Segurança: originais copiados para `.livro/substituicoes/<id>/` + manifesto com impressão digital; falha no meio reverte o que foi gravado; **desfazer** só restaura arquivos não editados depois (ou à força, avisando que perde edições posteriores). Capítulo aberto é salvo antes e recarregado depois. Arquivos de ficha **não são renomeados** (links e a convenção `Nome-Sobrenome.md` do autor ficam intactos).
+- Verificado nos arquivos reais: Caio→Jordan acharia 14 ocorrências na bíblia, 16 no registro de conflitos, 3 na cronologia etc., sem tocar links.
+
+Aprendido com as fichas/índices enviados: `Indice.md`, `Matriz-*` e `Mapa-*` dentro da pasta de personagens deixam de ser tratados como personagens (antes "índice" no texto puxaria a nota para a memória); a lista mostra o título `# Eugênio Castelo` em vez do nome do arquivo; o modelo de ficha nova segue o padrão do autor (Ficha técnica Campo|Registro + Vida própria R10 + Aparições + Arco e conexões).
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.
