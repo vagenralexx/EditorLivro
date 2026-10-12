@@ -249,7 +249,8 @@ export function WorkspaceDashboard() {
       setAnalysisError("Essa sugestão não foi aplicada porque o trecho original não foi localizado no XHTML atual. Revise-a manualmente.");
       return;
     }
-    setEditorText((current) => current.replace(before, suggestion.after));
+    // Função de substituição: "$&" e similares em suggestion.after não podem virar padrões.
+    setEditorText((current) => current.replace(before, () => suggestion.after));
     setExternalEditorRevision((current) => current + 1);
     setSuggestions((current) => current.filter((item) => item !== suggestion));
   }, [editorText]);

@@ -256,9 +256,20 @@ async fn complete_chat(provider: &str, model: &str, reasoning_effort: Option<&st
     Err("O provedor não aceitou o formato estruturado solicitado.".to_string())
 }
 
-async fn list_provider_models(provider: &str) -> Result<Vec<String>, String> {
-    let api_key = credential_entry(provider)?.get_password()
-        .map_err(|_| "Nenhuma chave foi salva para este provedor. Configure-a antes de continuar.".to_string())?;
+fn stored_api_key(provider: &str) -> Result<String, String> {
+    credential_entry(provider)?.get_password()
+        .map_err(|_| "Nenhuma chave foi salva para este provedor. Configure-a antes de continuar.".to_string())
+}
+
+/// O catálogo dos provedores mistura modelos de chat com embeddings, áudio,
+/// moderação e imagem. Esses não servem para análise editorial e poluem o seletor.
+fn is_chat_model(id: &str) -> bool {
+    const EXCLUDED: &[&str] = &["embed", "rerank", "whisper", "tts", "transcribe", "speech", "moderation", "guard", "dall-e", "image", "audio", "realtime", "clip", "ocr", "parse", "safety", "reward"];
+    let id = id.to_ascii_lowercase();
+    !EXCLUDED.iter().any(|marker| id.contains(marker))
+}
+
+async fn list_provider_models_with_key(provider: &str, api_key: &str) -> Result<Vec<String>, String> {
     let endpoint = provider_models_endpoint(provider)?;
     let client = ai_http_client()?;
     let response = client.get(endpoint).header(AUTHORIZATION, format!("Bearer {api_key}")).header(ACCEPT, "application/json")
@@ -266,16 +277,26 @@ async fn list_provider_models(provider: &str) -> Result<Vec<String>, String> {
     let status = response.status();
     let body = response.text().await.map_err(|error| format!("Não foi possível ler a resposta do provedor: {error}"))?;
     let payload: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Err("O provedor recusou esta chave (verifique se ela está correta, ativa e é do provedor selecionado).".to_string());
+    }
     if !status.is_success() {
         let detail = payload.pointer("/error/message").and_then(Value::as_str).or_else(|| payload.get("message").and_then(Value::as_str)).unwrap_or("sem detalhes retornados");
         return Err(format!("O provedor respondeu {status}: {detail}"));
     }
-    let mut models = payload.get("data").and_then(Value::as_array).into_iter().flatten()
+    let all = payload.get("data").and_then(Value::as_array).into_iter().flatten()
         .filter_map(|item| item.get("id").and_then(Value::as_str)).map(ToOwned::to_owned).collect::<Vec<_>>();
+    let mut models = all.iter().filter(|id| is_chat_model(id)).cloned().collect::<Vec<_>>();
+    // Se o filtro remover tudo, é melhor mostrar o catálogo completo do que bloquear o uso.
+    if models.is_empty() { models = all; }
     models.sort_unstable();
     models.dedup();
     if models.is_empty() { return Err("A chave foi aceita, mas o provedor não retornou modelos utilizáveis.".to_string()); }
     Ok(models)
+}
+
+async fn list_provider_models(provider: &str) -> Result<Vec<String>, String> {
+    list_provider_models_with_key(provider, &stored_api_key(provider)?).await
 }
 
 #[tauri::command]
@@ -288,6 +309,33 @@ fn save_provider_api_key(provider: String, api_key: String) -> Result<(), String
     if api_key.trim().len() < 8 { return Err("A chave informada parece inválida.".to_string()); }
     credential_entry(&provider)?.set_password(api_key.trim())
         .map_err(|error| format!("Não foi possível salvar a chave no cofre do sistema: {error}"))
+}
+
+#[tauri::command]
+fn delete_provider_api_key(provider: String) -> Result<(), String> {
+    match credential_entry(&provider)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(format!("Não foi possível remover a chave do cofre do sistema: {error}")),
+    }
+}
+
+/// Fluxo único: valida a chave digitada consultando o catálogo e só a grava no
+/// cofre se o provedor a aceitar. Sem chave nova, revalida a chave já salva.
+#[tauri::command]
+async fn connect_ai_provider(provider: String, api_key: Option<String>) -> Result<ConnectionResult, String> {
+    let candidate = api_key.as_deref().map(str::trim).filter(|key| !key.is_empty());
+    let models = match candidate {
+        Some(key) => {
+            if key.len() < 8 { return Err("A chave informada parece inválida.".to_string()); }
+            let models = list_provider_models_with_key(&provider, key).await?;
+            credential_entry(&provider)?.set_password(key)
+                .map_err(|error| format!("Não foi possível salvar a chave no cofre do sistema: {error}"))?;
+            models
+        }
+        None => list_provider_models(&provider).await?,
+    };
+    let message = format!("Conectado. {} modelo(s) disponíveis.", models.len());
+    Ok(ConnectionResult { provider, message, models })
 }
 
 #[tauri::command]
@@ -355,7 +403,7 @@ fn save_xhtml_document(path: String, content: String) -> Result<SaveResult, Stri
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, save_xhtml_document])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, save_xhtml_document])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 
@@ -371,6 +419,15 @@ mod ai_tests {
         let automatic = get_model_effort_options("groq".to_string(), "llama-3.3-70b-versatile".to_string());
         assert!(!automatic.configurable);
         assert_eq!(automatic.default, "auto");
+    }
+
+    #[test]
+    fn chat_model_filter_drops_non_chat_models() {
+        assert!(is_chat_model("meta/llama-3.3-70b-instruct"));
+        assert!(is_chat_model("gpt-4o"));
+        assert!(!is_chat_model("nvidia/nv-embedqa-e5-v5"));
+        assert!(!is_chat_model("whisper-large-v3"));
+        assert!(!is_chat_model("meta-llama/llama-guard-4-12b"));
     }
 
     #[test]

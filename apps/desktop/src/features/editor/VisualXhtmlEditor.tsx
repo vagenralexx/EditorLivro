@@ -38,9 +38,13 @@ function displayName(documentName?: string) {
 const PAGE_GAP = 56;
 
 export function VisualXhtmlEditor({ documentId, documentName, source, theme, fontScale, brightness, externalRevision, initialPage, onChange, onPaginationChange, hasPreviousChapter, hasNextChapter, onPreviousChapter, onNextChapter, onSaveRequested }: VisualXhtmlEditorProps) {
+  const hasDocument = Boolean(documentId);
   const canvasRef = useRef<HTMLDivElement>(null);
   const initialPageRef = useRef(initialPage);
   const pendingRestorePageRef = useRef<number | undefined>(undefined);
+  const pointerHeldRef = useRef(false);
+  const pageRef = useRef(1);
+  const navigationRef = useRef({ forward: () => {}, backward: () => {} });
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
   const [columnWidth, setColumnWidth] = useState(520);
@@ -146,6 +150,58 @@ export function VisualXhtmlEditor({ documentId, documentName, source, theme, fon
     else onNextChapter();
   };
 
+  pageRef.current = page;
+  navigationRef.current = { forward: goForward, backward: goBackward };
+
+  // A navegação entre páginas é exclusiva das setas do app e do teclado. Gestos
+  // do mouse/trackpad (arrastar seleção até a borda, rolagem horizontal, botões
+  // laterais "voltar/avançar") não podem trocar de página durante a edição.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const release = () => { pointerHeldRef.current = false; };
+    const blockWheel = (event: WheelEvent) => {
+      if (event.deltaX !== 0 || event.shiftKey) event.preventDefault();
+    };
+    const blockSideButtons = (event: MouseEvent) => {
+      if (event.button === 3 || event.button === 4) { event.preventDefault(); event.stopPropagation(); }
+    };
+    const handleKeys = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select")) return;
+      // Setas simples só navegam quando não editam texto: prévia (somente leitura) ou foco fora de campos.
+      const plainArrowsNavigate = target === document.body || target?.closest(".xhtml-canvas")?.getAttribute("contenteditable") === "false";
+      const forward = event.key === "PageDown" || (event.altKey && event.key === "ArrowRight") || (plainArrowsNavigate && !event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === "ArrowRight");
+      const backward = event.key === "PageUp" || (event.altKey && event.key === "ArrowLeft") || (plainArrowsNavigate && !event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === "ArrowLeft");
+      if (!forward && !backward) return;
+      event.preventDefault();
+      if (forward) navigationRef.current.forward(); else navigationRef.current.backward();
+    };
+    canvas?.addEventListener("wheel", blockWheel, { passive: false });
+    window.addEventListener("mouseup", release);
+    window.addEventListener("blur", release);
+    for (const type of ["mousedown", "mouseup", "auxclick"] as const) window.addEventListener(type, blockSideButtons, true);
+    window.addEventListener("keydown", handleKeys);
+    return () => {
+      canvas?.removeEventListener("wheel", blockWheel);
+      window.removeEventListener("mouseup", release);
+      window.removeEventListener("blur", release);
+      for (const type of ["mousedown", "mouseup", "auxclick"] as const) window.removeEventListener(type, blockSideButtons, true);
+      window.removeEventListener("keydown", handleKeys);
+    };
+  }, [hasDocument]);
+
+  // Enquanto o botão do mouse está pressionado dentro do texto, o navegador pode
+  // rolar a coluna sozinho (autoscroll da seleção). Voltamos à página atual.
+  const handleCanvasScroll = () => {
+    const canvas = canvasRef.current;
+    if (canvas && pointerHeldRef.current) {
+      const locked = (pageRef.current - 1) * pageStep();
+      if (Math.abs(canvas.scrollLeft - locked) > 1) canvas.scrollTo({ left: locked, behavior: "instant" });
+      return;
+    }
+    measurePagination();
+  };
+
   const emitChange = () => {
     if (canvasRef.current) onChange(composeEditableXhtml(shell, canvasRef.current.innerHTML));
     window.requestAnimationFrame(() => measurePagination());
@@ -207,8 +263,6 @@ export function VisualXhtmlEditor({ documentId, documentName, source, theme, fon
     emitChange();
   };
 
-  const hasDocument = Boolean(documentId);
-
   return (
     <div className="visual-editor">
       <div className="format-toolbar" aria-label="Ferramentas de edição e leitura">
@@ -234,7 +288,7 @@ export function VisualXhtmlEditor({ documentId, documentName, source, theme, fon
           {hasDocument ? <>
             <header className="editable-running-header"><span>{displayName(documentName)}</span><span>{mode === "preview" ? "Prévia Kindle" : "Modo de edição"}</span></header>
             <div className="kindle-page-viewport">
-              <div ref={canvasRef} className="xhtml-canvas" contentEditable={mode === "edit"} suppressContentEditableWarning spellCheck={mode === "edit"} onInput={emitChange} onScroll={() => measurePagination()} aria-label={`${mode === "edit" ? "Conteúdo editável" : "Prévia de leitura"} de ${displayName(documentName)}`} />
+              <div ref={canvasRef} className="xhtml-canvas" contentEditable={mode === "edit"} suppressContentEditableWarning spellCheck={mode === "edit"} onInput={emitChange} onMouseDown={(event) => { if (event.button === 0) pointerHeldRef.current = true; }} onScroll={handleCanvasScroll} aria-label={`${mode === "edit" ? "Conteúdo editável" : "Prévia de leitura"} de ${displayName(documentName)}`} />
             </div>
             <footer className="editable-page-footer"><span>Alterações refletem no XHTML ao salvar</span><span>{page} / {pageCount}</span></footer>
           </> : <div className="reader-empty"><strong>Seu livro aparece aqui</strong><p>Abra uma pasta XHTML para começar a editar visualmente.</p></div>}
