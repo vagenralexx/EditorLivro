@@ -209,6 +209,31 @@ pub fn set_frontmatter(text: &str, key: &str, value: &str) -> String {
     }
 }
 
+/// Acrescenta apelidos (`aliases`) ao frontmatter sem duplicar; cria o bloco se a nota não tiver.
+pub fn add_aliases(text: &str, new: &[String]) -> String {
+    let (front, body) = split_frontmatter(text);
+    let existing: Vec<String> = front.map(parse_aliases).unwrap_or_default();
+    let mut all = existing.clone();
+    for alias in new { let a = alias.trim(); if !a.is_empty() && !all.iter().any(|e| fold(e) == fold(a)) { all.push(a.to_string()); } }
+    if all.len() == existing.len() { return text.to_string(); }
+    let quote = |a: &String| if a.contains([',', ':', '[', ']', '#']) { format!("\"{}\"", a.replace('"', "'")) } else { a.clone() };
+    let inline = format!("[{}]", all.iter().map(quote).collect::<Vec<_>>().join(", "));
+    let Some(front) = front else { return format!("---\naliases: {inline}\n---\n{body}"); };
+    // Lista em bloco ("aliases:" seguido de "- item"): acrescenta itens e mantém o estilo.
+    let lines: Vec<&str> = front.lines().collect();
+    if let Some(at) = lines.iter().position(|l| l.trim_end() == "aliases:") {
+        let mut end = at + 1;
+        while end < lines.len() && lines[end].trim_start().starts_with("- ") { end += 1; }
+        if end > at + 1 {
+            let mut out: Vec<String> = lines[..end].iter().map(|l| l.to_string()).collect();
+            for alias in &all[existing.len()..] { out.push(format!("  - {}", quote(alias))); }
+            out.extend(lines[end..].iter().map(|l| l.to_string()));
+            return format!("---\n{}\n---\n{body}", out.join("\n"));
+        }
+    }
+    set_frontmatter(text, "aliases", &inline)
+}
+
 pub fn sanitize_title(title: &str) -> Result<String, String> {
     let cleaned: String = title.chars().filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '#' | '^' | '[' | ']') && !c.is_control()).collect();
     let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -289,6 +314,13 @@ impl Vault {
             }
         }
         out.sort_by(|a, b| (a.meta.kind, a.meta.title.to_lowercase()).cmp(&(b.meta.kind, b.meta.title.to_lowercase())));
+        Ok(out)
+    }
+
+    /// Todas as notas com o texto bruto (inclui frontmatter), para operações em lote.
+    pub fn raw_notes(&self) -> Result<Vec<(NoteMeta, String)>, String> {
+        let mut out = Vec::new();
+        for note in self.load_all()? { let text = self.read_note(&note.meta.path)?; out.push((note.meta, text)); }
         Ok(out)
     }
 
@@ -813,6 +845,17 @@ mod tests {
         assert_eq!(get("04-Personagens/Fichas/Iris-Barbosa.md"), Some(3), "Íris, Iris Barbosa (nome inteiro) e Iris");
         assert_eq!(get("Personagens/Aria.md"), Some(2));
         assert_eq!(get("Lugares/Torre.md"), Some(2));
+    }
+
+    #[test]
+    fn add_aliases_handles_inline_block_missing_and_no_frontmatter() {
+        let n = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(add_aliases("---\ntipo: personagem\naliases: []\n---\n# X\n", &n(&["Jordan"])), "---\ntipo: personagem\naliases: [Jordan]\n---\n# X\n");
+        assert_eq!(add_aliases("---\naliases: [Cai]\n---\nx", &n(&["Jordan", "cai"])), "---\naliases: [Cai, Jordan]\n---\nx");
+        assert_eq!(add_aliases("---\naliases:\n  - Cai\ntipo: x\n---\nx", &n(&["Jordan"])), "---\naliases:\n  - Cai\n  - Jordan\ntipo: x\n---\nx");
+        assert_eq!(add_aliases("---\ntipo: x\n---\nx", &n(&["Jordan"])), "---\ntipo: x\naliases: [Jordan]\n---\nx");
+        assert_eq!(add_aliases("# Caio\nx", &n(&["Jordan"])), "---\naliases: [Jordan]\n---\n# Caio\nx");
+        assert_eq!(add_aliases("---\naliases: [Jordan]\n---\nx", &n(&["jordan"])), "---\naliases: [Jordan]\n---\nx", "sem duplicar");
     }
 
     #[test]

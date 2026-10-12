@@ -17,6 +17,8 @@ mod model_capabilities;
 mod project_files;
 mod project_state;
 mod records;
+mod replace;
+mod replace_ops;
 mod snapshots;
 mod providers;
 mod skill;
@@ -636,6 +638,28 @@ async fn generate_chapter_recap(app: tauri::AppHandle, input: RecapInput) -> Res
     parse_recap(&raw)
 }
 
+// ---- Substituir palavras no livro (renomear personagem etc.) ----
+
+#[tauri::command]
+async fn replace_preview(request: replace_ops::Request) -> Result<replace_ops::Preview, String> {
+    run_blocking(move || { let vault = vault_for(&request.root)?; replace_ops::preview(&request, &vault) }).await
+}
+
+#[tauri::command]
+async fn replace_apply(request: replace_ops::ApplyRequest) -> Result<replace_ops::Applied, String> {
+    run_blocking(move || {
+        let vault = vault_for(&request.base.root)?;
+        safety_snapshot(&request.base.root, &vault, "antes-de-substituir");
+        replace_ops::apply(&request, &vault)
+    }).await
+}
+
+#[tauri::command]
+fn replace_history(root: String) -> Result<Vec<replace_ops::HistoryItem>, String> { replace_ops::history(&root) }
+
+#[tauri::command]
+fn replace_undo(root: String, id: String, force: bool) -> Result<replace_ops::Undone, String> { let vault = vault_for(&root)?; replace_ops::undo(&root, &vault, &id, force) }
+
 // ---- Bíblia em níveis (série › livro › arco) ----
 
 #[tauri::command]
@@ -762,7 +786,7 @@ fn project_state_patch(root: String, section: String, value: serde_json::Value) 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch, bible_catalog, bible_list, bible_create, bible_read, bible_write_section, bible_ai_draft, chapters_text])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch, bible_catalog, bible_list, bible_create, bible_read, bible_write_section, bible_ai_draft, chapters_text, replace_preview, replace_apply, replace_history, replace_undo])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 
