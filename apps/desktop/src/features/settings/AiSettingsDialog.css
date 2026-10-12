@@ -7,3 +7,4 @@
 .settings-actions .danger-button:hover:not(:disabled) { background: #fff0f2; }
 .settings-actions .danger-button.strong { margin-right: 0; color: #fff; background: #b4414f; }
 .settings-actions .remove-confirm { margin-right: auto; align-self: center; color: #942f3d; font-size: 12px; font-weight: 600; }
+.key-hint { margin-top: 4px; color: #6b7a90; font-size: 11px; }

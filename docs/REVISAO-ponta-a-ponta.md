@@ -39,3 +39,28 @@ A busca web retornou pouco para "editor EPUB com IA". Nada encontrado combina ed
 - **OpenWriter** (Tauri): editor com IA via Groq, exporta DOCX/PDF/HTML.
 
 Não li o código desses projetos; a comparação vem só das descrições públicas.
+
+---
+
+# Rodada 2 — EPUB profissional, provedores e uso da pasta `skill`
+
+## O que a pasta da skill realmente contém
+
+- **Não existe um gerador de EPUB pronto.** `references/producao.md` descreve o pipeline (estrutura, CSS Kindle, template XHTML, regra do `mimetype`, checklist), mas o `assemble_epub.py` citado nele **não está no repositório**. O único código de EPUB é `regenerar_epub` em `tools/revisar_traducao_completa.py`, que só substitui capítulos dentro de um EPUB original e tem o nome do arquivo fixo (`Ascensao_de_Aria_FINAL.epub`). `INDEX.md` também cita `PROMPT_REVISAO_AUTOMATICA.md`, que não existe.
+- **O que foi aproveitado:** a especificação de `producao.md` virou o gerador (`packages/epub`): estrutura, CSS base (`assets/stylesheet.css`), convenção `chapter-number`/`chapter-title` para o sumário, `mimetype` primeiro e sem compressão, e o checklist de validação (capítulo vazio/truncado, OPF × NCX, capa, UTF-8).
+- **Não aproveitado, de propósito:** remoção de watermark/DRM de terceiros (`encryption.xml`) descrita em `producao.md`.
+- **`corrigir_fluidez_ptbr.py`:** as 60 regras foram afinadas para uma tradução específica (ex.: "enganou as coxas", "bombeando-a cheia"). Como correção automática genérica, tem risco de falso positivo. Proposta: expor como **sugestões revisáveis** (antes/depois), nunca aplicar em lote.
+- **Ainda subutilizado (próximo passo):** `SKILL.md` e `references/*` (perfis de revisão, Genesis Score, glossário, tabela de equivalências, pipeline). Hoje o app usa 5 prompts curtos em `lib.rs`; carregar os módulos relevantes por perfil seria o ganho editorial mais forte.
+
+## Entregue
+
+- **EPUB:** `packages/epub` (Rust, 18 testes) + botão **Exportar EPUB** (metadados, capa, validação com relatório, gravação atômica). Dois modos: pasta de capítulos (gera o pacote EPUB 3 completo) e EPUB extraído (reempacota sem tocar no conteúdo). Validado com o **epubcheck 5.2.1: 0 erros** nos dois modos. O epubcheck apontou um erro real no meu primeiro gerador (`nav` não linear sem link), já corrigido.
+- **Bug encontrado:** o editor gravava `&nbsp;` no XHTML, entidade inválida em XML (leitores e epubcheck rejeitam). Corrigido na origem e também normalizado no empacotamento.
+- **Provedores:** 10 servidores (NVIDIA, Groq, OpenAI, OpenRouter, Gemini, Mistral, DeepSeek, xAI, Together, Cerebras). O servidor é detectado pelo prefixo da chave colada; o seletor de modelos agrupa **por servidor**; modelos que não são de chat são filtrados; OpenRouter valida a chave em endpoint próprio (o catálogo dele é público). Modelos de raciocínio da OpenAI passaram a usar `max_completion_tokens`.
+
+## Limites conhecidos
+
+- Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.
+- Em modo `extracted`, EPUB 2 é reempacotado como EPUB 2 (com aviso); não há conversão automática para EPUB 3, nem troca de capa ou série.
+- A ordem dos capítulos no modo "pasta" é a do painel (ordem natural dos nomes), não um `spine` editável.
+- O Kindle Previewer/KDP não foram executados.

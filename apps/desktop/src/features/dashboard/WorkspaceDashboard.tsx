@@ -3,10 +3,11 @@ import { join } from "@tauri-apps/api/path";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { friendlyModelName, providerFor, type ProviderId } from "../ai/providers";
+import { emptyRecord, friendlyModelName, providerFor, providerIds, providers, type ProviderId } from "../ai/providers";
 import { textFromXhtml } from "../editor/xhtmlDocument";
 import { VisualXhtmlEditor, type PaginationState, type ReaderTheme } from "../editor/VisualXhtmlEditor";
 import { editorialProfiles, type EditorialProfileId } from "../editorial/catalog";
+import { ExportEpubDialog } from "../export/ExportEpubDialog";
 import { AiSettingsDialog } from "../settings/AiSettingsDialog";
 import "./WorkspaceDashboard.css";
 
@@ -19,10 +20,9 @@ interface SaveResult { backupPath: string; }
 interface EffortOption { value: string; label: string; }
 interface ModelEffortOptions { configurable: boolean; levels: EffortOption[]; default: string; note: string; }
 
-const initialModels: Record<ProviderId, string> = { nvidia: "", groq: "", openai: "" };
-const initialAvailableModels: Record<ProviderId, string[]> = { nvidia: [], groq: [], openai: [] };
-const initialReasoningEfforts: Record<ProviderId, Record<string, string>> = { nvidia: {}, groq: {}, openai: {} };
-const providerIds: ProviderId[] = ["nvidia", "groq", "openai"];
+const initialModels = (): Record<ProviderId, string> => emptyRecord(() => "");
+const initialAvailableModels = (): Record<ProviderId, string[]> => emptyRecord<string[]>(() => []);
+const initialReasoningEfforts = (): Record<ProviderId, Record<string, string>> => emptyRecord<Record<string, string>>(() => ({}));
 const AI_PREFERENCES_KEY = "book-editor.ai-preferences.v1";
 const PROJECT_POSITIONS_KEY = "book-editor.project-positions.v1";
 
@@ -57,18 +57,16 @@ function saveProjectPosition(projectRoot: string, documentPath: string, page: nu
 function loadAiPreferences(): PersistedAiPreferences {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(AI_PREFERENCES_KEY) ?? "{}") as PersistedAiPreferences;
+    const efforts = initialReasoningEfforts();
+    for (const id of providerIds) efforts[id] = { ...(parsed.reasoningEfforts?.[id] ?? {}) };
     return {
       providerId: providerIds.includes(parsed.providerId as ProviderId) ? parsed.providerId : "nvidia",
-      models: { ...initialModels, ...parsed.models },
-      availableModels: { ...initialAvailableModels, ...parsed.availableModels },
+      models: { ...initialModels(), ...parsed.models },
+      availableModels: { ...initialAvailableModels(), ...parsed.availableModels },
       validatedProviders: parsed.validatedProviders ?? {},
-      reasoningEfforts: {
-        nvidia: { ...(parsed.reasoningEfforts?.nvidia ?? {}) },
-        groq: { ...(parsed.reasoningEfforts?.groq ?? {}) },
-        openai: { ...(parsed.reasoningEfforts?.openai ?? {}) },
-      },
+      reasoningEfforts: efforts,
     };
-  } catch { return { providerId: "nvidia", models: initialModels, availableModels: initialAvailableModels, validatedProviders: {}, reasoningEfforts: initialReasoningEfforts }; }
+  } catch { return { providerId: "nvidia", models: initialModels(), availableModels: initialAvailableModels(), validatedProviders: {}, reasoningEfforts: initialReasoningEfforts() }; }
 }
 
 function isXhtml(path: string) { return /\.x?html$/iu.test(path); }
@@ -93,9 +91,9 @@ export function WorkspaceDashboard() {
   const [savedAiPreferences] = useState(loadAiPreferences);
   const [providerId, setProviderId] = useState<ProviderId>(() => savedAiPreferences.providerId ?? "nvidia");
   const [modelQuery, setModelQuery] = useState("");
-  const [models, setModels] = useState(() => savedAiPreferences.models ?? initialModels);
-  const [availableModels, setAvailableModels] = useState(() => savedAiPreferences.availableModels ?? initialAvailableModels);
-  const [reasoningEfforts, setReasoningEfforts] = useState<Record<ProviderId, Record<string, string>>>(() => savedAiPreferences.reasoningEfforts ?? initialReasoningEfforts);
+  const [models, setModels] = useState(() => savedAiPreferences.models ?? initialModels());
+  const [availableModels, setAvailableModels] = useState(() => savedAiPreferences.availableModels ?? initialAvailableModels());
+  const [reasoningEfforts, setReasoningEfforts] = useState<Record<ProviderId, Record<string, string>>>(() => savedAiPreferences.reasoningEfforts ?? initialReasoningEfforts());
   const [effortOptions, setEffortOptions] = useState<ModelEffortOptions | null>(null);
   const [profileId, setProfileId] = useState<EditorialProfileId>("line-review");
   const [bootstrap, setBootstrap] = useState<AppBootstrap | null>(null);
@@ -106,6 +104,7 @@ export function WorkspaceDashboard() {
   const [projectRoot, setProjectRoot] = useState("");
   const [isOpening, setIsOpening] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
   const [keyStatus, setKeyStatus] = useState<Partial<Record<ProviderId, boolean>>>(() => savedAiPreferences.validatedProviders ?? {});
   const [analysis, setAnalysis] = useState("");
   const [findings, setFindings] = useState<EditorialFinding[]>([]);
@@ -145,12 +144,27 @@ export function WorkspaceDashboard() {
   }, []);
 
   const provider = useMemo(() => providerFor(providerId), [providerId]);
-  const quickModels = useMemo(() => {
+  // Catálogo unificado: só provedores com chave salva e modelos carregados, agrupados por servidor.
+  const modelGroups = useMemo(() => {
     const query = modelQuery.trim().toLocaleLowerCase("pt-BR");
-    return [...availableModels[providerId]]
-      .filter((model) => !query || `${friendlyModelName(model)} ${model}`.toLocaleLowerCase("pt-BR").includes(query))
-      .sort((left, right) => friendlyModelName(left).localeCompare(friendlyModelName(right), "pt-BR"));
-  }, [availableModels, modelQuery, providerId]);
+    return providers.flatMap((item) => {
+      if (!keyStatus[item.id]) return [];
+      const entries = availableModels[item.id]
+        .filter((model) => !query || `${friendlyModelName(model)} ${model} ${item.label}`.toLocaleLowerCase("pt-BR").includes(query))
+        .sort((left, right) => friendlyModelName(left).localeCompare(friendlyModelName(right), "pt-BR"));
+      return entries.length ? [{ provider: item, models: entries }] : [];
+    });
+  }, [availableModels, keyStatus, modelQuery]);
+  const hasAnyCatalog = providers.some((item) => keyStatus[item.id] && availableModels[item.id].length > 0);
+  const selectedModelKey = models[providerId] && modelGroups.some((group) => group.provider.id === providerId && group.models.includes(models[providerId])) ? `${providerId}::${models[providerId]}` : "";
+  const chooseModel = useCallback((value: string) => {
+    const separator = value.indexOf("::");
+    if (separator < 0) return;
+    const id = value.slice(0, separator) as ProviderId;
+    if (!providerIds.includes(id)) return;
+    setProviderId(id);
+    setModels((current) => ({ ...current, [id]: value.slice(separator + 2) }));
+  }, []);
   const profile = useMemo(() => editorialProfiles.find((item) => item.id === profileId) ?? editorialProfiles[0], [profileId]);
   const wordCount = useMemo(() => {
     const text = textFromXhtml(editorText);
@@ -319,7 +333,7 @@ export function WorkspaceDashboard() {
     <main className={`workspace-shell ${isAppDark ? "app-night" : ""}`}>
       <header className="topbar">
         <div className="brand"><img src="/editor-livros-epub.png" alt="" className="brand-icon" /><div><strong>Editor de Livros EPUB</strong><span>Local-first · XHTML · EPUB</span></div></div>
-        <div className="topbar-actions"><button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurações</button><button className="primary-button" type="button" onClick={openProject} disabled={isOpening}>{isOpening ? "Abrindo…" : "Abrir projeto"}</button></div>
+        <div className="topbar-actions"><button className="secondary-button" type="button" onClick={() => setIsExportOpen(true)} disabled={!projectRoot} title={projectRoot ? "Gerar o arquivo .epub final" : "Abra um projeto para exportar"}>Exportar EPUB</button><button className="secondary-button" type="button" onClick={() => setIsSettingsOpen(true)}>Configurações</button><button className="primary-button" type="button" onClick={openProject} disabled={isOpening}>{isOpening ? "Abrindo…" : "Abrir projeto"}</button></div>
       </header>
       <div className="workspace-grid">
         <aside className="library-panel" aria-label="Biblioteca do projeto">
@@ -335,10 +349,10 @@ export function WorkspaceDashboard() {
         <aside className="ai-panel" aria-label="Assistente editorial">
           <div className="panel-heading"><span>ASSISTENTE EDITORIAL</span><span className="live-dot">●</span></div>
           <div className="ai-intro"><span className="ai-orb">✦</span><div><strong>Skill editorial estruturada</strong><p>A IA sugere; você revisa e aplica com diff.</p></div></div>
-          <div className="provider-status"><span>{provider.badge}</span><div><strong>{provider.label}</strong><small>{models[providerId] ? friendlyModelName(models[providerId]) : "Valide a chave para carregar os modelos"}</small><small>{keyStatus[providerId] ? availableModels[providerId].length ? `✓ Catálogo restaurado: ${availableModels[providerId].length} modelos` : "Chave salva; catálogo ainda não validado" : "Chave não configurada"}</small></div></div>
-          <label className="field-label quick-model-field">MODELO DE ANÁLISE<input className="model-search" type="search" value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder="Buscar por nome ou ID…" disabled={!availableModels[providerId].length} aria-label="Buscar modelo por nome ou identificador" /><select value={quickModels.includes(models[providerId]) ? models[providerId] : ""} onChange={(event) => setModels((current) => ({ ...current, [providerId]: event.target.value }))} disabled={!availableModels[providerId].length} aria-label="Modelo usado na próxima análise"><option value="">{availableModels[providerId].length ? quickModels.length ? "Selecione um modelo" : "Nenhum modelo encontrado" : "Valide a chave para carregar os modelos"}</option>{quickModels.map((availableModel) => <option key={availableModel} value={availableModel}>{friendlyModelName(availableModel)} · {availableModel}</option>)}</select><small>Troca rápida para a próxima análise.</small></label>
+          <div className="provider-status"><span>{provider.badge}</span><div><strong>{provider.label}</strong><small>{models[providerId] ? friendlyModelName(models[providerId]) : "Conecte uma chave para carregar os modelos"}</small><small>{keyStatus[providerId] ? availableModels[providerId].length ? `✓ ${availableModels[providerId].length} modelos neste servidor` : "Chave salva; catálogo ainda não carregado" : "Chave não configurada"}</small></div></div>
+          <label className="field-label quick-model-field">MODELO DE ANÁLISE<input className="model-search" type="search" value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder="Buscar por modelo ou servidor…" disabled={!hasAnyCatalog} aria-label="Buscar modelo por nome, identificador ou servidor" /><select value={selectedModelKey} onChange={(event) => chooseModel(event.target.value)} disabled={!hasAnyCatalog} aria-label="Modelo usado na próxima análise"><option value="">{hasAnyCatalog ? modelGroups.length ? "Selecione um modelo" : "Nenhum modelo encontrado" : "Conecte uma chave para carregar os modelos"}</option>{modelGroups.map((group) => <optgroup key={group.provider.id} label={`${group.provider.label} · ${group.models.length}`}>{group.models.map((availableModel) => <option key={`${group.provider.id}::${availableModel}`} value={`${group.provider.id}::${availableModel}`}>{friendlyModelName(availableModel)} · {availableModel}</option>)}</optgroup>)}</select><small>Cada grupo é um servidor; o modelo escolhido é enviado a ele.</small></label>
           <label className="field-label effort-field">ESFORÇO DE RACIOCÍNIO
-            <select value={selectedEffort} onChange={(event) => { const model = models[providerId]; if (!model) return; setReasoningEfforts((current) => ({ ...current, [providerId]: { ...(current[providerId] ?? {}), [model]: event.target.value } })); }} disabled={!availableModels[providerId].length || !effortOptions?.configurable} aria-label="Esforço de raciocínio usado na próxima análise">
+            <select value={selectedEffort} onChange={(event) => { const model = models[providerId]; if (!model) return; setReasoningEfforts((current) => ({ ...current, [providerId]: { ...(current[providerId] ?? {}), [model]: event.target.value } })); }} disabled={!hasAnyCatalog || !effortOptions?.configurable} aria-label="Esforço de raciocínio usado na próxima análise">
               {effortOptions?.configurable ? effortOptions.levels.map((level) => <option key={level.value} value={level.value}>{level.label}</option>) : <option value="auto">Automático</option>}
             </select>
             <small>{effortOptions?.note || (models[providerId] ? "" : "Selecione um modelo para ver as opções de esforço.")}</small>
@@ -351,7 +365,8 @@ export function WorkspaceDashboard() {
           <div className="module-row"><span>Módulos do núcleo</span><strong>{bootstrap ? `${bootstrap.modules.length} preparados` : "carregando"}</strong></div>
         </aside>
       </div>
-      {isSettingsOpen && <AiSettingsDialog activeProviderId={providerId} models={models} availableModels={availableModels} onClose={() => setIsSettingsOpen(false)} onProviderChange={setProviderId} onModelChange={(id, model) => setModels((current) => ({ ...current, [id]: model }))} onModelsLoaded={(id, loadedModels) => setAvailableModels((current) => ({ ...current, [id]: loadedModels }))} onKeyStatusChange={updateKeyStatus} />}
+      {isSettingsOpen && <AiSettingsDialog activeProviderId={providerId} models={models} availableModels={availableModels} keyStatus={keyStatus} onClose={() => setIsSettingsOpen(false)} onProviderChange={setProviderId} onModelChange={(id, model) => setModels((current) => ({ ...current, [id]: model }))} onModelsLoaded={(id, loadedModels) => setAvailableModels((current) => ({ ...current, [id]: loadedModels }))} onKeyStatusChange={updateKeyStatus} />}
+      {isExportOpen && <ExportEpubDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} hasUnsavedChanges={Boolean(activeDocument) && editorText !== savedText} onClose={() => setIsExportOpen(false)} />}
       {pendingDocument && <div className="transition-modal-backdrop" role="presentation"><section className="transition-modal" role="dialog" aria-modal="true" aria-labelledby="save-changes-title"><span className="transition-icon">✦</span><div><span className="eyebrow">ALTERAÇÕES PENDENTES</span><h2 id="save-changes-title">Salvar edições e continuar?</h2><p>Você editou <strong>{activeDocument?.name}</strong>. O próximo capítulo será aberto somente depois de salvar ou descartar estas alterações.</p></div><div className="transition-actions"><button type="button" className="secondary-button" onClick={() => setPendingDocument(null)} disabled={isSaving}>Cancelar</button><button type="button" className="discard-button" onClick={discardAndContinue} disabled={isSaving}>Descartar e continuar</button><button type="button" className="primary-button" onClick={() => void saveAndContinue()} disabled={isSaving}>{isSaving ? "Salvando…" : "Salvar edições e continuar"}</button></div><small>Um backup do XHTML atual é criado automaticamente.</small></section></div>}
     </main>
   );

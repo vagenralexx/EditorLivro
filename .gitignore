@@ -3,3 +3,7 @@ dist/
 build/
 .env
 .env.*
+
+# Rust
+target/
+packages/epub/Cargo.lock

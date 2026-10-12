@@ -9,9 +9,11 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod model_capabilities;
+mod providers;
 
 const CREDENTIAL_SERVICE: &str = "com.smartprint.epubeditor";
 const MAX_ANALYSIS_CHARS: usize = 60_000;
+const REJECTED_KEY: &str = "O provedor recusou esta chave (verifique se ela está correta, ativa e é do provedor selecionado).";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,25 +77,11 @@ struct EditorialResponse {
 struct SaveResult { backup_path: String }
 
 fn canonical_provider(provider: &str) -> Result<&'static str, String> {
-    match provider { "nvidia" => Ok("nvidia"), "groq" => Ok("groq"), "openai" => Ok("openai"), _ => Err("Provedor não suportado.".to_string()) }
+    providers::spec(provider).map(|spec| spec.id)
 }
 
 fn provider_endpoint(provider: &str) -> Result<&'static str, String> {
-    match canonical_provider(provider)? {
-        "nvidia" => Ok("https://integrate.api.nvidia.com/v1/chat/completions"),
-        "groq" => Ok("https://api.groq.com/openai/v1/chat/completions"),
-        "openai" => Ok("https://api.openai.com/v1/chat/completions"),
-        _ => unreachable!(),
-    }
-}
-
-fn provider_models_endpoint(provider: &str) -> Result<&'static str, String> {
-    match canonical_provider(provider)? {
-        "nvidia" => Ok("https://integrate.api.nvidia.com/v1/models"),
-        "groq" => Ok("https://api.groq.com/openai/v1/models"),
-        "openai" => Ok("https://api.openai.com/v1/models"),
-        _ => unreachable!(),
-    }
+    providers::spec(provider).map(|spec| spec.chat_endpoint)
 }
 
 fn credential_entry(provider: &str) -> Result<Entry, String> {
@@ -261,36 +249,30 @@ fn stored_api_key(provider: &str) -> Result<String, String> {
         .map_err(|_| "Nenhuma chave foi salva para este provedor. Configure-a antes de continuar.".to_string())
 }
 
-/// O catálogo dos provedores mistura modelos de chat com embeddings, áudio,
-/// moderação e imagem. Esses não servem para análise editorial e poluem o seletor.
-fn is_chat_model(id: &str) -> bool {
-    const EXCLUDED: &[&str] = &["embed", "rerank", "whisper", "tts", "transcribe", "speech", "moderation", "guard", "dall-e", "image", "audio", "realtime", "clip", "ocr", "parse", "safety", "reward"];
-    let id = id.to_ascii_lowercase();
-    !EXCLUDED.iter().any(|marker| id.contains(marker))
-}
-
 async fn list_provider_models_with_key(provider: &str, api_key: &str) -> Result<Vec<String>, String> {
-    let endpoint = provider_models_endpoint(provider)?;
+    let spec = providers::spec(provider)?;
     let client = ai_http_client()?;
-    let response = client.get(endpoint).header(AUTHORIZATION, format!("Bearer {api_key}")).header(ACCEPT, "application/json")
+    // Provedores com catálogo público validam a chave em outro endpoint.
+    if let Some(check) = spec.key_check_endpoint {
+        let response = client.get(check).header(AUTHORIZATION, format!("Bearer {api_key}")).header(ACCEPT, "application/json")
+            .send().await.map_err(|error| describe_network_error(&error))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED || response.status() == reqwest::StatusCode::FORBIDDEN {
+            return Err(REJECTED_KEY.to_string());
+        }
+    }
+    let response = client.get(spec.models_endpoint).header(AUTHORIZATION, format!("Bearer {api_key}")).header(ACCEPT, "application/json")
         .send().await.map_err(|error| describe_network_error(&error))?;
     let status = response.status();
     let body = response.text().await.map_err(|error| format!("Não foi possível ler a resposta do provedor: {error}"))?;
     let payload: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Err("O provedor recusou esta chave (verifique se ela está correta, ativa e é do provedor selecionado).".to_string());
+        return Err(REJECTED_KEY.to_string());
     }
     if !status.is_success() {
         let detail = payload.pointer("/error/message").and_then(Value::as_str).or_else(|| payload.get("message").and_then(Value::as_str)).unwrap_or("sem detalhes retornados");
         return Err(format!("O provedor respondeu {status}: {detail}"));
     }
-    let all = payload.get("data").and_then(Value::as_array).into_iter().flatten()
-        .filter_map(|item| item.get("id").and_then(Value::as_str)).map(ToOwned::to_owned).collect::<Vec<_>>();
-    let mut models = all.iter().filter(|id| is_chat_model(id)).cloned().collect::<Vec<_>>();
-    // Se o filtro remover tudo, é melhor mostrar o catálogo completo do que bloquear o uso.
-    if models.is_empty() { models = all; }
-    models.sort_unstable();
-    models.dedup();
+    let models = providers::chat_models(providers::parse_models(&payload));
     if models.is_empty() { return Err("A chave foi aceita, mas o provedor não retornou modelos utilizáveis.".to_string()); }
     Ok(models)
 }
@@ -399,11 +381,42 @@ fn save_xhtml_document(path: String, content: String) -> Result<SaveResult, Stri
     Ok(SaveResult { backup_path: backup.to_string_lossy().into_owned() })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EpubBuildResponse {
+    outcome: Option<book_epub::BuildOutcome>,
+    /// Presente quando a validação encontrou erros e nada foi gravado.
+    blocked_report: Option<book_epub::Report>,
+}
+
+async fn run_blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work).await.map_err(|error| format!("A tarefa foi interrompida: {error}"))?
+}
+
+#[tauri::command]
+async fn epub_inspect(root: String) -> Result<book_epub::ProjectInfo, String> {
+    run_blocking(move || book_epub::inspect(&root)).await
+}
+
+#[tauri::command]
+async fn epub_validate(request: book_epub::BuildRequest) -> Result<book_epub::Report, String> {
+    run_blocking(move || book_epub::validate(&request)).await
+}
+
+#[tauri::command]
+async fn epub_build(request: book_epub::BuildRequest, output: String) -> Result<EpubBuildResponse, String> {
+    run_blocking(move || match book_epub::build(&request, &output) {
+        Ok(outcome) => Ok(EpubBuildResponse { outcome: Some(outcome), blocked_report: None }),
+        Err(book_epub::BuildError::Invalid(report)) => Ok(EpubBuildResponse { outcome: None, blocked_report: Some(report) }),
+        Err(book_epub::BuildError::Failed(message)) => Err(message),
+    }).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, save_xhtml_document])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, save_xhtml_document, epub_inspect, epub_validate, epub_build])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 
@@ -419,15 +432,6 @@ mod ai_tests {
         let automatic = get_model_effort_options("groq".to_string(), "llama-3.3-70b-versatile".to_string());
         assert!(!automatic.configurable);
         assert_eq!(automatic.default, "auto");
-    }
-
-    #[test]
-    fn chat_model_filter_drops_non_chat_models() {
-        assert!(is_chat_model("meta/llama-3.3-70b-instruct"));
-        assert!(is_chat_model("gpt-4o"));
-        assert!(!is_chat_model("nvidia/nv-embedqa-e5-v5"));
-        assert!(!is_chat_model("whisper-large-v3"));
-        assert!(!is_chat_model("meta-llama/llama-guard-4-12b"));
     }
 
     #[test]

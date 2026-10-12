@@ -88,8 +88,23 @@ pub fn apply_model_parameters(
     model: &str,
     reasoning_effort: Option<&str>,
 ) -> Result<(), String> {
+    if provider == "openai" {
+        // Modelos de raciocínio da OpenAI (o1/o3/o4 e gpt-5.x) rejeitam
+        // `max_tokens` e `temperature` diferente do padrão; exigem
+        // `max_completion_tokens`. O orçamento inclui o raciocínio.
+        let id = model.trim().to_ascii_lowercase();
+        let is_reasoning = id.starts_with("o1") || id.starts_with("o3") || id.starts_with("o4") || id.starts_with("gpt-5");
+        if is_reasoning {
+            if let Some(object) = body.as_object_mut() {
+                object.remove("temperature");
+                let budget = object.remove("max_tokens").and_then(|v| v.as_u64()).unwrap_or(1400);
+                object.insert("max_completion_tokens".to_string(), json!(budget.max(4096)));
+            }
+        }
+        return Ok(());
+    }
     if provider != "nvidia" {
-        // Groq e OpenAI seguem o caminho comum até que uma família seja
+        // Demais provedores seguem o caminho comum até que uma família seja
         // verificada ao vivo. Não enviamos reasoning_effort para eles.
         return Ok(());
     }
@@ -200,6 +215,18 @@ mod tests {
         assert_eq!(body["temperature"], 1.0);
         assert_eq!(body["top_p"], 0.95);
         assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn openai_reasoning_models_use_completion_token_budget() {
+        let mut body = json!({ "max_tokens": 1400, "temperature": 0.2 });
+        apply_model_parameters(&mut body, "openai", "gpt-5-mini", None).unwrap();
+        assert!(body.get("max_tokens").is_none() && body.get("temperature").is_none());
+        assert_eq!(body["max_completion_tokens"], 4096);
+        let mut classic = json!({ "max_tokens": 1400, "temperature": 0.2 });
+        apply_model_parameters(&mut classic, "openai", "gpt-4o", None).unwrap();
+        assert_eq!(classic["max_tokens"], 1400);
+        assert_eq!(classic["temperature"], 0.2);
     }
 
     #[test]

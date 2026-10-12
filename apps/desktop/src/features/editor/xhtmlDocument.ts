@@ -71,6 +71,14 @@ function toXhtmlVoidElements(html: string) {
   });
 }
 
+/**
+ * `innerHTML` serializa espaços não separáveis como `&nbsp;`, entidade que não
+ * existe em XML: o XHTML resultante seria rejeitado por leitores e validadores.
+ */
+function toXmlSafeEntities(html: string) {
+  return html.replace(/&nbsp;/gu, "&#160;");
+}
+
 export function composeEditableXhtml(shell: XhtmlShell, bodyHtml: string) {
   return [
     shell.declaration,
@@ -80,7 +88,7 @@ export function composeEditableXhtml(shell: XhtmlShell, bodyHtml: string) {
     shell.headHtml.trim(),
     "</head>",
     shell.bodyOpenTag,
-    toXhtmlVoidElements(bodyHtml.trim()),
+    toXhtmlVoidElements(toXmlSafeEntities(bodyHtml.trim())),
     "</body>",
     "</html>",
     "",

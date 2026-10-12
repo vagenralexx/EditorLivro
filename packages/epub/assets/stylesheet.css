@@ -1,0 +1,22 @@
+/* Folha de estilo base — calibrada para Kindle e leitores EPUB 3.
+   Regras da skill editor-profissional-de-livros (producao.md):
+   fonte relativa em em, entrelinha 1.7, recuo de 1.5em, sem position/float. */
+body { font-family: Georgia, serif; font-size: 1em; line-height: 1.7em;
+       text-align: justify; hyphens: auto; orphans: 2; widows: 2; margin: 0; }
+p { text-indent: 1.5em; margin: 0; }
+.no-indent, h1 + p, h2 + p, h3 + p, .chapter-title + p, .scene-break + p, .divider + p { text-indent: 0; }
+h1, h2, h3 { text-align: center; font-weight: bold; line-height: 1.25em; page-break-after: avoid; }
+h1 { font-size: 1.45em; margin: 2.5em 0 1.5em 0; }
+h2 { font-size: 1.25em; margin: 2em 0 1em 0; }
+h3 { font-size: 1.1em; margin: 1.5em 0 .8em 0; }
+.chapter-break { page-break-before: always; padding-top: 2.5em; }
+.chapter-number { font-size: 0.78em; font-weight: bold; letter-spacing: 0.15em;
+                  text-transform: uppercase; text-align: center; text-indent: 0; color: #888; }
+.chapter-title  { font-size: 1.45em; font-weight: bold; font-style: italic;
+                  text-align: center; text-indent: 0; margin-bottom: 2.5em; }
+.divider, .scene-break { text-align: center; text-indent: 0; margin: 1.8em auto; color: #888; letter-spacing: 0.3em; }
+.character-thought { font-style: italic; }
+blockquote { margin: 1.2em 1.5em; font-style: italic; }
+img { max-width: 100%; height: auto; }
+.cover { text-align: center; text-indent: 0; margin: 0; padding: 0; }
+.cover img { max-height: 100%; }
