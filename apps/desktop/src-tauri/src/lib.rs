@@ -672,6 +672,9 @@ struct BibleDraftInput {
     notes: String,
     #[serde(default)]
     text: String,
+    /// Texto da seção a usar como `<atual>` no lugar do gravado (extração em blocos acumula o rascunho).
+    #[serde(default)]
+    current: Option<String>,
     provider: String,
     model: String,
     #[serde(default)]
@@ -680,6 +683,12 @@ struct BibleDraftInput {
     genre: skill::genre::Genre,
     #[serde(default)]
     glossary: Vec<String>,
+}
+
+/// Texto simples de capítulos (para extrair a bíblia do manuscrito). Devolve um item por capítulo.
+#[tauri::command]
+async fn chapters_text(root: String, paths: Vec<String>) -> Result<Vec<String>, String> {
+    run_blocking(move || Ok(read_chapter_lines(&root, &paths)?.into_iter().map(|lines| lines.join("\n")).collect())).await
 }
 
 /// Propõe o corpo de uma seção da bíblia. Nada é gravado: o autor revisa e decide.
@@ -696,7 +705,8 @@ async fn bible_ai_draft(app: tauri::AppHandle, input: BibleDraftInput) -> Result
     let index = vault.index()?;
     let names: Vec<String> = index.notes.iter().filter(|n| matches!(n.kind, vault::Kind::Personagem | vault::Kind::Lugar | vault::Kind::Fio)).take(120).map(|n| n.title.clone()).collect();
     let system = bible::draft_system_prompt(doc.level, &title, spec, &input.mode, input.genre.label(), &names, &input.glossary);
-    let user = format!("<atual>\n{}\n</atual>\n\n<fonte>\n{}\n</fonte>", current.map(|s| s.body.as_str()).unwrap_or(""), source);
+    let atual = input.current.as_deref().or(current.map(|s| s.body.as_str())).unwrap_or("");
+    let user = format!("<atual>\n{atual}\n</atual>\n\n<fonte>\n{source}\n</fonte>");
     CANCEL_ANALYSIS.store(false, Ordering::Relaxed);
     let emit = move |progress: chat::Progress| { let _ = app.emit("ai-progress", progress); };
     let raw = complete_chat(&emit, &input.provider, &input.model, input.reasoning_effort.as_deref(), &system, &user, 3000, false).await?;
@@ -752,7 +762,7 @@ fn project_state_patch(root: String, section: String, value: serde_json::Value) 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch, bible_catalog, bible_list, bible_create, bible_read, bible_write_section, bible_ai_draft])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch, bible_catalog, bible_list, bible_create, bible_read, bible_write_section, bible_ai_draft, chapters_text])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 

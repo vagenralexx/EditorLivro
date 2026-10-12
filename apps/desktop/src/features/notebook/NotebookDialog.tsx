@@ -4,6 +4,7 @@ import type { Glossary } from "../skill/skillApi";
 import { layoutGraph } from "./graphLayout";
 import { renderMarkdown } from "./markdown";
 import { kindInfo, kindOrder, splitFrontmatter, vaultCreate, vaultDelete, vaultIndex, vaultLocation, vaultMentions, vaultRead, vaultRename, vaultTimeline, vaultWrite, type NoteKind, type NoteMentions, type NoteMeta, type RecordSummary, type TimelineEntry, type VaultIndex } from "./notebookApi";
+import { BibleDialog } from "./BibleDialog";
 import { ProjectDataDialog } from "./ProjectDataDialog";
 import { RecapDialog, type AiConfig } from "./RecapDialog";
 import "../settings/AiSettingsDialog.css";
@@ -42,6 +43,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
   const [info, setInfo] = useState("");
   const [recapOpen, setRecapOpen] = useState(false);
   const [dataOpen, setDataOpen] = useState(false);
+  const [bibleOpen, setBibleOpen] = useState(false);
   const [recordId, setRecordId] = useState("");
   const [recordPrefix, setRecordPrefix] = useState("");
   const [recordStatus, setRecordStatus] = useState<StatusFilter>("todos");
@@ -179,6 +181,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
           <div className="notebook-actions">
             <button className="secondary-button" type="button" onClick={() => { void save(); setRecapOpen(true); }} disabled={!activeChapter}>Gerar recap do capítulo aberto</button>
             <button className="secondary-button" type="button" onClick={() => void revealFolder()} disabled={!index?.exists} title="O caderno é uma pasta de arquivos .md compatível com o Obsidian">Mostrar pasta (Obsidian)</button>
+            <button className="secondary-button" type="button" onClick={() => { void save(); setBibleOpen(true); }} title="Fatos canônicos do livro/série, por seção, com IA opcional">Bíblia</button>
             <button className="secondary-button" type="button" onClick={() => { void save(); setDataOpen(true); }} title="Onde os dados ficam, pasta do caderno e cópias de segurança">Dados do projeto</button>
             <button className="dialog-close" type="button" onClick={() => { void save(); onClose(); }} aria-label="Fechar caderno">×</button>
           </div>
@@ -270,6 +273,7 @@ export function NotebookDialog({ projectRoot, chapters, activeChapterIndex, acti
 
         {!empty && tab === "timeline" && <div className="timeline-view">{timeline.length === 0 ? <p className="notebook-hint">A linha do tempo vem dos recaps dos capítulos. Gere o recap de um capítulo para começar.</p> : timeline.map((entry) => <section key={entry.chapter}><h4>{entry.chapter}</h4><div>{renderMarkdown(entry.events.map((event) => `- ${event}`).join("\n"), { ...mdLinks, onCreate: () => undefined })}</div></section>)}</div>}
 
+        {bibleOpen && <BibleDialog projectRoot={projectRoot} chapters={chapters} activeChapterIndex={activeChapterIndex} ai={ai} genre={genre} glossaryLines={glossaryLines} onClose={() => { setBibleOpen(false); void refresh(); }} onChanged={() => { void refresh(); onChanged(); }} />}
         {dataOpen && <ProjectDataDialog projectRoot={projectRoot} onClose={() => setDataOpen(false)} onChanged={() => { setSelected(""); setContent(""); setSaved(""); setRecordId(""); void refresh(); onChanged(); }} />}
         {recapOpen && activeChapter && <RecapDialog projectRoot={projectRoot} chapterName={activeChapter.name} chapterLines={activeChapterLines} order={activeChapterIndex + 1} ai={ai} genre={genre} glossary={glossaryLines} onClose={() => setRecapOpen(false)} onSaved={() => { void refresh(); onChanged(); }} />}
       </section>

@@ -58,6 +58,30 @@ Não li o código desses projetos; a comparação vem só das descrições públ
 - **Bug encontrado:** o editor gravava `&nbsp;` no XHTML, entidade inválida em XML (leitores e epubcheck rejeitam). Corrigido na origem e também normalizado no empacotamento.
 - **Provedores:** 10 servidores (NVIDIA, Groq, OpenAI, OpenRouter, Gemini, Mistral, DeepSeek, xAI, Together, Cerebras). O servidor é detectado pelo prefixo da chave colada; o seletor de modelos agrupa **por servidor**; modelos que não são de chat são filtrados; OpenRouter valida a chave em endpoint próprio (o catálogo dele é público). Modelos de raciocínio da OpenAI passaram a usar `max_completion_tokens`.
 
+## Onde ficam os dados (round 5)
+
+Nada importante fica no navegador/WebView. A pasta do projeto é a fonte da verdade e basta abri-la de novo após reinstalar ou formatar:
+
+| Arquivo | Conteúdo | Observações |
+|---|---|---|
+| `.livro/projeto.json` | configurações, posição de leitura, caminho do original, metadados do EPUB, pasta do caderno e mapeamento | gravado por seção, atômico (fsync + rename), `.bak`; arquivo ilegível **nunca** é sobrescrito |
+| `glossario.json` | glossário do projeto | formato anterior mantido |
+| caderno (padrão `.livro-notas/`, ou **qualquer pasta**, ex.: o vault Obsidian da trilogia) | notas `.md`: fichas, fios, recaps, bíblias, registros | notas existentes nunca são reescritas só por serem lidas |
+| `.livro/snapshots/*.zip` | cópias automáticas (≤1 a cada 5 min, 30 mais recentes) antes de renomear/excluir/aplicar recap/editar bíblia | restaurar guarda o estado atual como outra cópia |
+| `.livro-exemplares.json` | exemplares com marca d'água | formato anterior mantido |
+
+Dados antigos do `localStorage` são migrados uma vez (e só apagados depois de gravados). **Evitamos SQLite** como fonte da verdade: bancos corrompem em pastas sincronizadas (OneDrive/Dropbox) e não são legíveis/editáveis à mão.
+
+**Registros por ID** (`CF-20`, `FIO-14`, `LAC-03`, `PT-L1-01`…): linhas de tabela Markdown são lidas como registros (aba *Registros*), com o estado vigente **inferido** do texto (nunca gravado nos arquivos). Verificado nos arquivos reais do autor: 52 IDs CF / 54 linhas, idêntico a uma contagem independente.
+
+## Bíblia em níveis (série › livro › arco)
+
+- Cada bíblia é uma nota `.md` (`nivel:` e `livro:` no frontmatter) na pasta de bíblias do caderno; seções `## N. Título`. Uma bíblia existente do autor é adotada como está (verificado na *Biblia-L1-A-Cura*: 14 seções reconhecidas; regravar todas as seções sem mudar nada preserva o conteúdo).
+- O app grava **uma seção por vez**; o resto do arquivo fica intacto. Seção endereçada por título exato; se houver duas do mesmo tipo (como "Mecânica…" e "Regras do universo") nunca se escolhe por palpite.
+- Estado de canon na última linha da seção: `#canon/proposto` (veio da IA), `#canon/confirmado`, `#canon/aberto` (lacuna). A memória enviada à IA rotula proposto/lacuna e esconde as tags.
+- Preenchimento: (1) manual, guiado por *para que serve / formato / perguntas* de cada seção; (2) IA **a partir das suas respostas** (só estrutura, não inventa); (3) IA **a partir do manuscrito**, em blocos de ~40 mil caracteres acumulando o rascunho. A IA só propõe; você revisa/edita e aplica.
+- Ainda não feito: importar bíblia de `.docx`, séries com vários livros no mesmo vault com herança entre níveis na memória, e "bíblia compilada" como visão gerada.
+
 ## Limites conhecidos
 
 - Provedores novos seguem a documentação pública, mas **não foram testados com chaves reais**; a leitura do catálogo está coberta por testes com respostas de exemplo. Anthropic ficou de fora: usa protocolo próprio (`x-api-key`), não o formato OpenAI.

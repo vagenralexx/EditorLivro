@@ -218,6 +218,25 @@ pub fn skeleton(level: Level, title: &str, book: Option<&str>) -> String {
     out
 }
 
+/// Estado de canon da seção `##` que contém o título dado (o próprio `##` ou uma subseção `###`).
+pub fn owning_status(text: &str, heading: &str) -> Option<String> {
+    let wanted = fold(strip_number(heading));
+    let (mut offset, mut fenced, mut at) = (0usize, false, None);
+    for line in text.split_inclusive('\n') {
+        let t = line.trim_end_matches(['\r', '\n']);
+        if t.trim_start().starts_with("```") { fenced = !fenced; }
+        if !fenced && t.starts_with('#') && fold(strip_number(t.trim_start_matches('#').trim())) == wanted { at = Some(offset); break; }
+        offset += line.len();
+    }
+    let pos = at?;
+    locate(text).into_iter().rev().find(|r| r.head <= pos).and_then(|r| split_status(&text[r.start..r.end]).1)
+}
+
+/// Remove as linhas `#canon/…` (são metadados do app, não conteúdo para a IA).
+pub fn strip_canon_tags(text: &str) -> String {
+    text.lines().filter(|l| !TAGS.iter().any(|(tag, _)| l.trim() == *tag)).collect::<Vec<_>>().join("\n")
+}
+
 /// Prompt para propor o corpo de UMA seção. A IA só devolve Markdown do corpo (sem título).
 pub fn draft_system_prompt(level: Level, section_title: &str, spec: Option<&SectionSpec>, mode: &str, genre: &str, names: &[String], glossary: &[String]) -> String {
     let (purpose, format) = spec.map(|s| (s.purpose, s.format)).unwrap_or(("Seção livre do autor.", "Siga o formato que a seção já tem."));
@@ -372,6 +391,15 @@ mod tests {
         let spec = SECTIONS.iter().find(|s| s.id == "idades");
         let prompt = draft_system_prompt(Level::Livro, "Idades e datas-chave", spec, "manuscrito", "thriller", &["Íris".to_string()], &[]);
         assert!(prompt.contains("Tabela Markdown") && prompt.contains("capítulo/trecho") && prompt.contains("Íris") && prompt.contains("nível da bíblia: livro".replace("nível", "Nível").as_str()));
+    }
+
+    #[test]
+    fn owning_status_finds_the_section_of_a_subheading() {
+        let text = "# T\n\n## 4. Personagens e fatos canônicos\n\n### Caio\nx\n\n### Lívia\ny\n\n#canon/proposto\n\n## 5. Grupos\n\nz\n";
+        assert_eq!(owning_status(text, "Lívia").as_deref(), Some("proposto"));
+        assert_eq!(owning_status(text, "Caio").as_deref(), Some("proposto"), "a tag vale para a seção ## inteira");
+        assert_eq!(owning_status(text, "Grupos"), None);
+        assert_eq!(strip_canon_tags("a\n#canon/proposto\nb"), "a\nb");
     }
 
     #[test]

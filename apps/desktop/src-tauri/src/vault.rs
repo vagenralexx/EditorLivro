@@ -436,11 +436,13 @@ impl Vault {
                 let heading_hits: Vec<String> = heading_variants(&heading).into_iter().filter(|v| count_word(&text, v) > 0).collect();
                 let matches = !heading_hits.is_empty() || cited_names.iter().any(|name| h.contains(name.as_str()));
                 if !matches || body.trim().is_empty() || notes_used.iter().any(|u| u.ends_with(&format!("{}.md", heading.trim()))) { continue; }
-                let clean = strip_superseded(&body);
+                let clean = crate::bible::strip_canon_tags(&strip_superseded(&body));
                 if clean.trim().is_empty() { continue; }
+                // Proposta da IA ainda não aprovada ou lacuna declarada: a IA de análise precisa saber.
+                let label = match crate::bible::owning_status(&note.body, heading.trim()).as_deref() { Some("proposto") => "[PROPOSTO, NÃO CONFIRMADO PELO AUTOR] ", Some("aberto") => "[LACUNA EM ABERTO] ", _ => "" };
                 cited_names.extend(heading_hits);
                 notes_used.push(format!("{}#{}", note.meta.path, heading.trim()));
-                from_bible.push(format!("### {} (de {})\n{}", heading.trim(), note.meta.title, clip(&clean, 700)));
+                from_bible.push(format!("### {label}{} (de {})\n{}", heading.trim(), note.meta.title, clip(&clean, 700)));
             }
         }
         if !from_bible.is_empty() { sections.push(format!("TRECHOS DA BÍBLIA SOBRE O QUE O CAPÍTULO CITA\n{}", from_bible.join("\n\n"))); }
@@ -811,6 +813,18 @@ mod tests {
         assert_eq!(get("04-Personagens/Fichas/Iris-Barbosa.md"), Some(3), "Íris, Iris Barbosa (nome inteiro) e Iris");
         assert_eq!(get("Personagens/Aria.md"), Some(2));
         assert_eq!(get("Lugares/Torre.md"), Some(2));
+    }
+
+    #[test]
+    fn memory_labels_proposed_and_open_bible_sections_and_hides_the_tags() {
+        let dir = project();
+        let vault = v(&dir);
+        vault.write_note("01-Biblias/Biblia.md", "---\ntipo: biblia\n---\n# Bíblia\n## Personagens\n### Lívia Valença\nTem 12 anos.\n\n#canon/proposto\n\n## Grupos\n### Minerva\nObjetivo desconhecido.\n\n#canon/aberto\n\n## Regras\n### Lucas\nConfirmado.\n\n#canon/confirmado\n").unwrap();
+        let ctx = vault.memory(&["Lívia, Minerva e Lucas.".to_string()], &[]).unwrap();
+        assert!(ctx.text.contains("[PROPOSTO, NÃO CONFIRMADO PELO AUTOR] Lívia Valença"), "{}", ctx.text);
+        assert!(ctx.text.contains("[LACUNA EM ABERTO] Minerva"), "{}", ctx.text);
+        assert!(ctx.text.contains("### Lucas") && !ctx.text.contains("[PROPOSTO, NÃO CONFIRMADO PELO AUTOR] Lucas"));
+        assert!(!ctx.text.contains("#canon/"), "as tags são metadados do app");
     }
 
     #[test]
