@@ -135,3 +135,20 @@ fn output_must_be_an_epub_file() {
     let out = dir.path().join("livro.zip");
     assert!(matches!(build(&request(dir.path(), "L"), &out.to_string_lossy()), Err(BuildError::Failed(_))));
 }
+
+#[test]
+fn reads_chapters_from_epub_in_spine_order_and_from_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    chapter(&dir.path().join("src"), "cap10.xhtml", "<h1>Dez</h1><p>fim do livro</p>");
+    chapter(&dir.path().join("src"), "cap2.xhtml", "<h1>Dois</h1><p>a&nbsp;b</p><p>segundo</p>");
+    let epub = dir.path().join("l.epub");
+    build(&request(&dir.path().join("src"), "L"), &epub.to_string_lossy()).unwrap();
+    let chapters = book_epub::read_source(&epub.to_string_lossy()).unwrap();
+    assert_eq!(chapters.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["cap2.xhtml", "cap10.xhtml"]);
+    assert_eq!(chapters[0].lines, vec!["Dois", "a b", "segundo"]);
+    fs::write(dir.path().join("src/nota.txt"), "linha um\n\nlinha dois").unwrap();
+    let folder = book_epub::read_source(&dir.path().join("src").to_string_lossy()).unwrap();
+    assert_eq!(folder.len(), 3);
+    assert_eq!(folder[2].lines, vec!["linha um", "linha dois"]);
+    assert!(book_epub::read_source(&dir.path().join("nada.zip").to_string_lossy()).is_err());
+}

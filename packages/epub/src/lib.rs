@@ -10,12 +10,14 @@ mod loose;
 mod model;
 mod opf;
 mod scan;
+mod text;
 mod util;
 mod validate;
 mod write;
 mod xhtml;
 
 pub use model::*;
+pub use text::{lines_from_xhtml, read_source, ChapterText};
 
 use std::path::Path;
 

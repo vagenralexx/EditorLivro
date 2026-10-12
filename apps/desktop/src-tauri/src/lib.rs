@@ -11,7 +11,9 @@ use tauri::Emitter;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod chat;
+mod glossary;
 mod model_capabilities;
+mod project_files;
 mod providers;
 mod skill;
 
@@ -415,11 +417,50 @@ async fn epub_build(request: book_epub::BuildRequest, output: String) -> Result<
     }).await
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GlossaryState { exists: bool, glossary: glossary::Glossary }
+
+#[tauri::command]
+fn glossary_load(root: String) -> Result<GlossaryState, String> {
+    let path = project_files::resolve(&root, glossary::FILE_NAME)?;
+    if !path.is_file() { return Ok(GlossaryState { exists: false, glossary: glossary::Glossary::default() }); }
+    let text = fs::read_to_string(&path).map_err(|error| format!("Não foi possível ler o glossário: {error}"))?;
+    let parsed = serde_json::from_str::<glossary::Glossary>(&text).map_err(|error| format!("O glossario.json existente é inválido (nada foi alterado): {error}"))?;
+    Ok(GlossaryState { exists: true, glossary: parsed })
+}
+
+#[tauri::command]
+fn glossary_save(root: String, glossary: glossary::Glossary) -> Result<glossary::Glossary, String> {
+    let cleaned = glossary.cleaned();
+    let path = project_files::resolve(&root, glossary::FILE_NAME)?;
+    let json = serde_json::to_string_pretty(&cleaned).map_err(|error| error.to_string())?;
+    project_files::write_atomic(&path, json.as_bytes())?;
+    Ok(cleaned)
+}
+
+#[tauri::command]
+fn glossary_defaults() -> std::collections::BTreeMap<String, Vec<String>> { glossary::default_equivalences() }
+
+/// Sugere nomes e termos inventados que aparecem nos capítulos do projeto.
+#[tauri::command]
+async fn glossary_suggest(root: String, paths: Vec<String>, known: Vec<String>) -> Result<Vec<glossary::TermCandidate>, String> {
+    run_blocking(move || {
+        let mut chapters = Vec::new();
+        for path in paths.iter().take(500) {
+            let inside = project_files::ensure_inside(&root, path)?;
+            let text = fs::read_to_string(&inside).map_err(|error| format!("Não foi possível ler {path}: {error}"))?;
+            chapters.push(book_epub::lines_from_xhtml(&text));
+        }
+        Ok(glossary::suggest_terms(&chapters, &known, 3))
+    }).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 

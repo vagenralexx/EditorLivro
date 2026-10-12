@@ -35,17 +35,32 @@ export interface Genesis { dimensions: DimensionScore[]; floor: number; mean: nu
 export const getSkillCatalog = () => invoke<SkillCatalog>("get_skill_catalog");
 export const scanEditorial = (text: string, options: ScanOptions) => invoke<ScanReport>("scan_editorial", { text, options });
 
-/** Converte `glossario.json` (formato de producao.md da skill) em linhas para o prompt. */
-export function glossaryLines(raw: string): string[] {
-  try {
-    const data = JSON.parse(raw) as { nao_traduzir?: string[]; traducoes_fixas?: Record<string, string>; personagens?: Record<string, { apelidos?: string[]; tratamentos?: string[] }> };
-    const lines: string[] = [];
-    if (data.nao_traduzir?.length) lines.push(`NÃO alterar nem traduzir: ${data.nao_traduzir.join(", ")}`);
-    for (const [from, to] of Object.entries(data.traducoes_fixas ?? {})) lines.push(`Tradução fixa: “${from}” → “${to}”`);
-    for (const [name, info] of Object.entries(data.personagens ?? {})) {
-      const extras = [...(info.apelidos ?? []), ...(info.tratamentos ?? [])];
-      lines.push(extras.length ? `Personagem ${name} (apelidos/tratamentos: ${extras.join(", ")})` : `Personagem ${name}`);
-    }
-    return lines.slice(0, 80);
-  } catch { return []; }
+// ---- Glossário do projeto (glossario.json) ----
+export interface GlossaryCharacter { apelidos: string[]; tratamentos: string[]; }
+export interface Glossary {
+  nao_traduzir: string[];
+  traducoes_fixas: Record<string, string>;
+  personagens: Record<string, GlossaryCharacter>;
+  palavroes: Record<string, string[]>;
+  [extra: string]: unknown;
+}
+export interface TermCandidate { term: string; count: number; chapters: number; kind: "name" | "invented"; }
+export const emptyGlossary = (): Glossary => ({ nao_traduzir: [], traducoes_fixas: {}, personagens: {}, palavroes: {} });
+
+export const glossaryLoad = (root: string) => invoke<{ exists: boolean; glossary: Glossary }>("glossary_load", { root });
+export const glossarySave = (root: string, glossary: Glossary) => invoke<Glossary>("glossary_save", { root, glossary });
+export const glossaryDefaults = () => invoke<Record<string, string[]>>("glossary_defaults");
+export const glossarySuggest = (root: string, paths: string[], known: string[]) => invoke<TermCandidate[]>("glossary_suggest", { root, paths, known });
+
+/** Linhas de glossário para o prompt, a partir do objeto carregado. */
+export function glossaryToLines(data: Glossary): string[] {
+  const lines: string[] = [];
+  if (data.nao_traduzir.length) lines.push(`NÃO alterar nem traduzir: ${data.nao_traduzir.join(", ")}`);
+  for (const [from, to] of Object.entries(data.traducoes_fixas)) lines.push(`Tradução fixa: “${from}” → “${to}”`);
+  for (const [name, info] of Object.entries(data.personagens)) {
+    const extras = [...info.apelidos, ...info.tratamentos];
+    lines.push(extras.length ? `Personagem ${name} (apelidos/tratamentos: ${extras.join(", ")})` : `Personagem ${name}`);
+  }
+  for (const [raw, equivalents] of Object.entries(data.palavroes)) lines.push(`Linguagem crua: “${raw}” deve virar ${equivalents.join(" / ")} (sem suavizar)`);
+  return lines.slice(0, 100);
 }

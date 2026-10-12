@@ -9,8 +9,9 @@ import { paragraphTextFromXhtml, textFromXhtml } from "../editor/xhtmlDocument";
 import { VisualXhtmlEditor, type PaginationState, type ReaderTheme } from "../editor/VisualXhtmlEditor";
 import type { EditorialProfileId } from "../editorial/catalog";
 import { GenesisCard } from "../skill/GenesisCard";
+import { GlossaryDialog } from "../skill/GlossaryDialog";
 import { ScanPanel } from "../skill/ScanPanel";
-import { getSkillCatalog, glossaryLines, type GenreId, type Genesis, type ScanOptions, type SkillCatalog } from "../skill/skillApi";
+import { getSkillCatalog, glossaryLoad, glossaryToLines, type Glossary, type GenreId, type Genesis, type ScanOptions, type SkillCatalog } from "../skill/skillApi";
 import { ExportEpubDialog } from "../export/ExportEpubDialog";
 import { AiSettingsDialog } from "../settings/AiSettingsDialog";
 import "./WorkspaceDashboard.css";
@@ -125,6 +126,7 @@ export function WorkspaceDashboard() {
   const [projectSettings, setProjectSettings] = useState<ProjectSettings>(defaultProjectSettings);
   const [scope, setScope] = useState<"page" | "chapter">("page");
   const [glossary, setGlossary] = useState<string[]>([]);
+  const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
   const [genesis, setGenesis] = useState<Genesis | null>(null);
   const [bootstrap, setBootstrap] = useState<AppBootstrap | null>(null);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
@@ -285,7 +287,7 @@ export function WorkspaceDashboard() {
       const savedDocument = files.find((file) => file.path === savedPosition?.documentPath);
       setProjectRoot(selected);
       setProjectSettings(loadProjectSettings(selected));
-      readTextFile(await join(selected, "glossario.json")).then((raw) => setGlossary(glossaryLines(raw))).catch(() => setGlossary([]));
+      glossaryLoad(selected).then((state) => setGlossary(glossaryToLines(state.glossary))).catch(() => setGlossary([]));
       await loadDocument(savedDocument ?? files[0], savedDocument ? savedPosition?.page : 1);
     } catch (error) {
       await message(String(error), { title: "Não foi possível abrir o projeto", kind: "error" });
@@ -417,7 +419,8 @@ export function WorkspaceDashboard() {
             <label className="field-label">GÊNERO (calibra metas e limiares)<select value={projectSettings.genre} onChange={(event) => setProjectSettings((current) => ({ ...current, genre: event.target.value as GenreId }))}>{catalog?.genres.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             <label className="check"><input type="checkbox" checked={projectSettings.translationMode} onChange={(event) => setProjectSettings((current) => ({ ...current, translationMode: event.target.checked }))} /><span>É tradução EN→PT-BR (alerta suavizações e sugere fluidez)</span></label>
             <label className="check"><input type="checkbox" checked={projectSettings.adultContent} onChange={(event) => setProjectSettings((current) => ({ ...current, adultContent: event.target.checked }))} /><span>Contém cenas adultas (preservar intensidade, sem suavizar)</span></label>
-            {glossary.length > 0 ? <p className="glossary-chip">✓ glossario.json carregado ({glossary.length} entradas) e enviado à IA</p> : <small className="tier-hint">Coloque um glossario.json na pasta do projeto para proteger nomes e termos.</small>}
+            {glossary.length > 0 && <p className="glossary-chip">✓ glossário com {glossary.length} entradas enviado à IA</p>}
+            <button className="secondary-button" type="button" disabled={!projectRoot} onClick={() => setIsGlossaryOpen(true)}>{glossary.length > 0 ? "Editar glossário…" : "Criar glossário…"}</button>
           </div>
           <button className="primary-button wide-button" type="button" onClick={analyzeDocument} disabled={isAnalyzing || !activeDocument}>{isAnalyzing ? (scope === "chapter" ? "Analisando capítulo…" : `Analisando página ${pagination.page}…`) : (scope === "chapter" ? "Analisar capítulo" : `Analisar página ${pagination.page}`)}</button>{isAnalyzing && <div className="analysis-progress" role="status" aria-live="polite"><span>{progressLabel(aiProgress)}</span><button type="button" className="discard-button" onClick={() => void invoke("cancel_ai_analysis")}>Cancelar</button></div>}<p className="privacy-note">Apenas o trecho analisado (página ou capítulo, conforme o escopo) é enviado ao provedor escolhido. A chave nunca entra no XHTML ou EPUB.</p>
           {genesis && <GenesisCard genesis={genesis} genreLabel={genreLabel} />}{(analysisError || analysis || findings.length > 0 || suggestions.length > 0) && <section className={analysisError ? "analysis-result error" : "analysis-result"} aria-live="polite"><strong>{analysisError ? "Não foi possível analisar" : "Resultado da análise"}</strong>{analysisError ? <p>{analysisError}</p> : <>{analysis && <p className="analysis-summary">{analysis}</p>}{findings.length > 0 && <div className="finding-list"><span className="finding-heading">Achados editoriais</span>{findings.map((finding, index) => <article className="finding-card" key={`${finding.title}-${index}`}><header><strong>{finding.title}</strong><span className={`severity ${finding.severity.toLocaleLowerCase("pt-BR")}`}>{finding.severity}</span></header><p>{finding.detail}</p>{finding.anchor && <blockquote><strong>Trecho:</strong> “{finding.anchor}”</blockquote>}</article>)}</div>}{suggestions.length > 0 && <div className="suggestion-list"><span className="suggestion-heading">Sugestões aplicáveis</span>{suggestions.map((suggestion, index) => <article className="suggestion-card" key={`${suggestion.before}-${index}`}><div><strong>Antes — texto atual</strong><del>{suggestion.before}</del></div><div><strong>Depois — proposta</strong><ins>{suggestion.after}</ins></div><small>{suggestion.reason}</small><button type="button" onClick={() => applySuggestion(suggestion)}>Aplicar sugestão</button></article>)}</div>}</>}</section>}
@@ -426,6 +429,7 @@ export function WorkspaceDashboard() {
         </aside>
       </div>
       {isSettingsOpen && <AiSettingsDialog activeProviderId={providerId} models={models} availableModels={availableModels} keyStatus={keyStatus} onClose={() => setIsSettingsOpen(false)} onProviderChange={setProviderId} onModelChange={(id, model) => setModels((current) => ({ ...current, [id]: model }))} onModelsLoaded={(id, loadedModels) => setAvailableModels((current) => ({ ...current, [id]: loadedModels }))} onKeyStatusChange={updateKeyStatus} />}
+      {isGlossaryOpen && <GlossaryDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} onClose={() => setIsGlossaryOpen(false)} onSaved={(saved: Glossary) => setGlossary(glossaryToLines(saved))} />}
       {isExportOpen && <ExportEpubDialog projectRoot={projectRoot} chapterPaths={documents.map((document) => document.path)} hasUnsavedChanges={Boolean(activeDocument) && editorText !== savedText} onClose={() => setIsExportOpen(false)} />}
       {pendingDocument && <div className="transition-modal-backdrop" role="presentation"><section className="transition-modal" role="dialog" aria-modal="true" aria-labelledby="save-changes-title"><span className="transition-icon">✦</span><div><span className="eyebrow">ALTERAÇÕES PENDENTES</span><h2 id="save-changes-title">Salvar edições e continuar?</h2><p>Você editou <strong>{activeDocument?.name}</strong>. O próximo capítulo será aberto somente depois de salvar ou descartar estas alterações.</p></div><div className="transition-actions"><button type="button" className="secondary-button" onClick={() => setPendingDocument(null)} disabled={isSaving}>Cancelar</button><button type="button" className="discard-button" onClick={discardAndContinue} disabled={isSaving}>Descartar e continuar</button><button type="button" className="primary-button" onClick={() => void saveAndContinue()} disabled={isSaving}>{isSaving ? "Salvando…" : "Salvar edições e continuar"}</button></div><small>Um backup do XHTML atual é criado automaticamente.</small></section></div>}
     </main>
