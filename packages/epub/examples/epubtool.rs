@@ -23,7 +23,7 @@ fn main() {
                 language: "pt-BR".into(),
                 ..Metadata::default()
             };
-            let request = BuildRequest { root, metadata, chapters: vec![], cover: args.get(offset + 2).cloned() };
+            let request = BuildRequest { root, metadata, chapters: vec![], cover: args.get(offset + 2).cloned(), watermark: std::env::var("WM").ok().map(|recipient| book_epub::WatermarkOptions { recipient, visible_notice: true, forensic: true }) };
             if command == "validate" {
                 match book_epub::validate(&request) {
                     Ok(report) => print_report(&report),

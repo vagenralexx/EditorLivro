@@ -152,3 +152,53 @@ fn reads_chapters_from_epub_in_spine_order_and_from_folders() {
     assert_eq!(folder[2].lines, vec!["linha um", "linha dois"]);
     assert!(book_epub::read_source(&dir.path().join("nada.zip").to_string_lossy()).is_err());
 }
+
+#[test]
+fn watermark_adds_license_page_and_forensic_marks_that_can_be_read_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let paragraphs = (0..12).map(|i| format!("<p>Parágrafo {i} do capítulo.</p>")).collect::<String>();
+    chapter(&dir.path().join("src"), "a.xhtml", &format!("<h1>A</h1>{paragraphs}"));
+    chapter(&dir.path().join("src"), "b.xhtml", &format!("<h1>B</h1>{paragraphs}"));
+    let mut req = request(&dir.path().join("src"), "Livro Marcado");
+    req.watermark = Some(book_epub::WatermarkOptions { recipient: "ana@exemplo.com".into(), visible_notice: true, forensic: true });
+    let out = dir.path().join("marcado.epub");
+    let outcome = build(&req, &out.to_string_lossy()).expect("deve gerar");
+    let info = outcome.watermark.expect("info da marca");
+    assert_eq!(info.token.len(), 8);
+    assert!(info.forensic_markers >= 6, "{}", info.forensic_markers);
+    let opf = read_entry(&out, "OEBPS/content.opf");
+    assert!(opf.contains("licenca.xhtml"));
+    let spine = &opf[opf.find("<spine").unwrap()..];
+    assert!(spine.find("idref=\"licenca\"").unwrap() < spine.find("idref=\"ch001\"").unwrap(), "sem capa, a licença abre o livro");
+    let page = read_entry(&out, "OEBPS/licenca.xhtml");
+    assert!(page.contains("ana@exemplo.com") && page.contains(&info.token));
+    let found = book_epub::detect_watermark(&out.to_string_lossy()).unwrap().expect("marca");
+    assert_eq!(found.token, info.token);
+    assert_eq!(found.markers, info.forensic_markers);
+    // Sem marca: nada é detectado.
+    let clean = dir.path().join("limpo.epub");
+    build(&request(&dir.path().join("src"), "Limpo"), &clean.to_string_lossy()).unwrap();
+    assert!(book_epub::detect_watermark(&clean.to_string_lossy()).unwrap().is_none());
+    // Exemplares diferentes têm códigos diferentes.
+    let second = build(&req, &dir.path().join("m2.epub").to_string_lossy()).unwrap().watermark.unwrap();
+    assert_ne!(second.token, info.token);
+}
+
+#[test]
+fn watermark_requires_a_recipient_and_works_on_extracted_epubs() {
+    let dir = tempfile::tempdir().unwrap();
+    chapter(&dir.path().join("src"), "a.xhtml", &format!("<h1>A</h1>{}", "<p>texto</p>".repeat(8)));
+    let base = dir.path().join("base.epub");
+    build(&request(&dir.path().join("src"), "Base"), &base.to_string_lossy()).unwrap();
+    let extracted = dir.path().join("ext");
+    zip::ZipArchive::new(fs::File::open(&base).unwrap()).unwrap().extract(&extracted).unwrap();
+    let mut req = BuildRequest { root: extracted.to_string_lossy().into_owned(), ..BuildRequest::default() };
+    req.watermark = Some(book_epub::WatermarkOptions { recipient: " ".into(), visible_notice: true, forensic: true });
+    assert!(matches!(build(&req, &dir.path().join("x.epub").to_string_lossy()), Err(BuildError::Invalid(r)) if r.issues.iter().any(|i| i.code == "WATERMARK-RECIPIENT")));
+    req.watermark = Some(book_epub::WatermarkOptions { recipient: "Beto".into(), visible_notice: true, forensic: true });
+    let out = dir.path().join("y.epub");
+    let outcome = build(&req, &out.to_string_lossy()).unwrap();
+    assert_eq!(book_epub::detect_watermark(&out.to_string_lossy()).unwrap().unwrap().token, outcome.watermark.unwrap().token);
+    assert!(read_entry(&out, "OEBPS/licenca.xhtml").contains("Beto"));
+    assert_eq!(outcome.report.errors, 0);
+}

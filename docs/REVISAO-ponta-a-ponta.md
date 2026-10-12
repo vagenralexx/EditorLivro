@@ -105,3 +105,27 @@ Toda análise era **uma requisição única, sem streaming, com teto fixo de 90 
 - **`/audiolivro` (ElevenLabs), `/sinopse`, `/capa`, `/persona`, `/pesquisar`, `/serie`:** perfis de criação sem manuscrito de entrada; baixa prioridade para um editor.
 - **Remoção de watermark/DRM** descrita em `producao.md`: deliberadamente fora.
 - Anti-IA por regra tem **falsos positivos** (ex.: "dançar" literal) e não substitui a leitura.
+
+---
+
+# Rodada 4 — glossário, duas telas, caderno (memória) e marca d'água
+
+## Entregue
+
+- **Glossário na interface:** criar/editar `glossario.json` (não traduzir, traduções fixas, personagens, equivalências de linguagem crua), com **sugestão automática de termos** lidos dos capítulos (nomes próprios e termos com apóstrofo). Escrita atômica e só dentro da pasta do projeto; campos extras do arquivo são preservados.
+- **Tradução em duas telas:** original (EPUB ou pasta) à esquerda com rolagem acompanhando a página, editor à direita. Mapeia capítulos pelo nome do arquivo (ou posição). Checagem determinística de fidelidade (parágrafos, falas, expansão de palavras, omissões/adições por parágrafo, termos do glossário, preservação de linguagem crua) e o perfil **Fidelidade 1:1** por IA, que recebe original e tradução.
+- **Caderno do livro (memória estilo Obsidian):** notas em Markdown com `[[wikilinks]]` e frontmatter YAML em `<projeto>/.livro-notas/` (abre como vault no Obsidian; fora do EPUB). Índice com apelidos, backlinks, links quebrados (clique cria a nota), menções por capítulo, renomear reescrevendo os links, grafo, linha do tempo. **LOG-RECAP por IA** (formato `/fechar-bloco` da skill) com revisão antes de gravar; cria/atualiza personagens, lugares e fios, e fecha fios. A memória (recaps anteriores + notas dos elementos citados + fios abertos) é injetada nos perfis que a usam; novo perfil **Continuidade**.
+- **Marca d'água do próprio livro:** página de licença visível (nome + código) e marca forense invisível repetida nos capítulos; **leitura de volta** para identificar o exemplar de um EPUB vazado; registro de exemplares em `.livro-exemplares.json`. epubcheck 5.2.1: 0 erros com a marca aplicada.
+
+## Decisão sobre "Watermark e DRM"
+
+- **Implementado:** marca d'água/identificação de exemplares do **seu próprio livro**.
+- **Não implementado:** *remover* marca d'água ou DRM de EPUBs de terceiros (descrito em `producao.md`): contorna proteção de obras alheias.
+- **DRM de verdade não é possível num app local:** Adobe ACS4, Readium LCP e Kindle exigem servidor de licenças ou a própria loja. Na KDP é a opção "Habilitar DRM" ao publicar. A marca forense **não impede cópia** e pode ser removida por quem reescrever o texto.
+
+## Limites conhecidos
+
+- Chaves de API reais e o app Tauri completo não foram executados neste ambiente; as telas foram verificadas com os comandos simulados.
+- Menções de personagens por título/apelido: não distinguem homônimos nem pronomes.
+- Fidelidade por parágrafo só funciona quando original e tradução têm o mesmo número de parágrafos; as contagens por capítulo sempre valem.
+- A marca forense usa caracteres de largura zero: pode afetar a busca e alguns leitores de tela; é opcional.

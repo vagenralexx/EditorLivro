@@ -2,7 +2,7 @@ import { dirname, join } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { emptyEpubMetadata, epubBuild, epubInspect, epubValidate, type EpubBuildRequest, type EpubMetadata, type EpubProjectInfo, type EpubReport } from "./epubApi";
+import { copiesList, copiesRegister, detectWatermark, emptyEpubMetadata, epubBuild, epubInspect, epubValidate, type CopyRecord, type EpubBuildRequest, type EpubMetadata, type EpubProjectInfo, type EpubReport } from "./epubApi";
 import "../settings/AiSettingsDialog.css";
 import "./ExportEpubDialog.css";
 
@@ -45,6 +45,9 @@ export function ExportEpubDialog({ projectRoot, chapterPaths, hasUnsavedChanges,
   const [busy, setBusy] = useState<"" | "loading" | "validating" | "building">("loading");
   const [result, setResult] = useState<{ path: string; size: number } | null>(null);
   const detected = useRef<EpubMetadata>(emptyEpubMetadata);
+  const [wm, setWm] = useState({ enabled: false, recipient: "", visibleNotice: true, forensic: true });
+  const [copies, setCopies] = useState<CopyRecord[]>([]);
+  const [leak, setLeak] = useState<string>("");
 
   const buildRequest = useCallback((): EpubBuildRequest => {
     const authors = parseAuthors(authorsText);
@@ -52,8 +55,10 @@ export function ExportEpubDialog({ projectRoot, chapterPaths, hasUnsavedChanges,
       // Em EPUB já extraído, só enviamos o que o usuário realmente alterou.
       ? Object.fromEntries(Object.entries({ ...form, authors }).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(detected.current[key as keyof EpubMetadata])))
       : { ...form, authors };
-    return { root: projectRoot, metadata, chapters: chapterPaths, cover: info?.mode === "loose" && cover ? cover : null };
-  }, [authorsText, chapterPaths, cover, form, info?.mode, projectRoot]);
+    return { root: projectRoot, metadata, chapters: chapterPaths, cover: info?.mode === "loose" && cover ? cover : null, watermark: wm.enabled ? { recipient: wm.recipient, visibleNotice: wm.visibleNotice, forensic: wm.forensic } : null };
+  }, [authorsText, chapterPaths, cover, form, info?.mode, projectRoot, wm]);
+
+  useEffect(() => { copiesList(projectRoot).then(setCopies).catch(() => setCopies([])); }, [projectRoot]);
 
   useEffect(() => {
     let active = true;
@@ -95,9 +100,23 @@ export function ExportEpubDialog({ projectRoot, chapterPaths, hasUnsavedChanges,
         setReport(response.outcome.report);
         setResult({ path: response.outcome.path, size: response.outcome.sizeBytes });
         storeFor(projectRoot, { metadata: { ...form, authors: parseAuthors(authorsText), identifier: response.outcome.identifier }, cover });
+        const mark = response.outcome.watermark;
+        if (mark) setCopies(await copiesRegister(projectRoot, { token: mark.token, recipient: mark.recipient, title: form.title || "livro", createdAt: "", file: fileName(response.outcome.path) }));
         setForm((current) => ({ ...current, identifier: response.outcome?.identifier ?? current.identifier }));
       }
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
+  }
+
+  async function checkLeak() {
+    const selected = await open({ multiple: false, title: "Escolha o EPUB suspeito", filters: [{ name: "EPUB", extensions: ["epub"] }] });
+    if (typeof selected !== "string") return;
+    setLeak("Lendo…");
+    try {
+      const found = await detectWatermark(selected);
+      if (!found) { setLeak("Nenhuma marca forense encontrada neste arquivo (ele não foi gerado com marca, ou a marca foi removida)."); return; }
+      const owner = copies.find((copy) => copy.token === found.token);
+      setLeak(owner ? `Código ${found.token}: exemplar gerado para ${owner.recipient} em ${owner.createdAt.slice(0, 10)} (${owner.file}). ${found.agreeing} de ${found.markers} marcas concordam.` : `Código ${found.token} encontrado (${found.agreeing} de ${found.markers} marcas), mas não consta no registro deste projeto.`);
+    } catch (reason) { setLeak(String(reason)); }
   }
 
   const grouped = useMemo(() => ({
@@ -131,13 +150,25 @@ export function ExportEpubDialog({ projectRoot, chapterPaths, hasUnsavedChanges,
           </div>
           <div className="export-cover"><span>CAPA</span><div><button className="secondary-button" type="button" onClick={() => void pickCover()} disabled={busy !== ""}>{cover ? "Trocar capa…" : "Escolher capa…"}</button>{cover && <><small title={cover}>{fileName(cover)}</small><button className="discard-button" type="button" onClick={() => { setCover(""); setReport(null); }}>Remover</button></>}</div></div>
         </>}
+        <details className="watermark-box" open={wm.enabled}><summary>Proteção do exemplar (marca d'água)</summary>
+          <p className="muted-note"><b>Isto não é DRM.</b> Não impede cópia: identifica a origem de um exemplar vazado. DRM de verdade (Adobe, Readium LCP, Kindle) é aplicado pela loja ou distribuidora, por exemplo a opção “Habilitar DRM” da KDP, e não por este aplicativo.</p>
+          <label className="check-row"><input type="checkbox" checked={wm.enabled} onChange={(event) => { setWm({ ...wm, enabled: event.target.checked }); setReport(null); setResult(null); }} /> Marcar este exemplar</label>
+          {wm.enabled && <>
+            <label className="settings-field">EXEMPLAR PARA (nome, e-mail ou nº do pedido)<input value={wm.recipient} onChange={(event) => setWm({ ...wm, recipient: event.target.value })} placeholder="ana@exemplo.com" /></label>
+            <label className="check-row"><input type="checkbox" checked={wm.visibleNotice} onChange={(event) => setWm({ ...wm, visibleNotice: event.target.checked })} /> Página de licença visível (nome + código), logo após a capa</label>
+            <label className="check-row"><input type="checkbox" checked={wm.forensic} onChange={(event) => setWm({ ...wm, forensic: event.target.checked })} /> Marca forense invisível nos capítulos (caracteres de largura zero; leitores de tela e busca ignoram, mas ela pode ser removida por quem reescrever o texto)</label>
+          </>}
+          <div className="watermark-actions"><button className="secondary-button" type="button" onClick={() => void checkLeak()}>Verificar um EPUB suspeito…</button>{copies.length > 0 && <small>{copies.length} exemplar(es) registrado(s) em .livro-exemplares.json</small>}</div>
+          {leak && <p className="settings-feedback success" role="status">{leak}</p>}
+          {copies.length > 0 && <details><summary>Exemplares registrados</summary><ul className="issue-list info">{copies.map((copy) => <li key={copy.token}><b>{copy.token}</b> — {copy.recipient} <small>{copy.createdAt.slice(0, 10)} · {copy.file}</small></li>)}</ul></details>}
+        </details>
         {error && <p className="settings-feedback error" role="alert">{error}</p>}
         {report && <div className="export-report" aria-live="polite">
           <strong>{report.errors ? `${report.errors} erro(s) impedem a geração` : "Nenhum erro encontrado"}{report.warnings ? ` · ${report.warnings} aviso(s)` : ""}</strong>
           {(["error", "warning"] as const).map((level) => grouped[level].length > 0 && <ul key={level} className={`issue-list ${level}`}>{grouped[level].map((issue, index) => <li key={`${issue.code}-${index}`}><b>{level === "error" ? "Erro" : "Aviso"}</b> {issue.message}{issue.file && <small>{issue.file}</small>}</li>)}</ul>)}
           {grouped.info.length > 0 && <details><summary>{grouped.info.length} observação(ões) automática(s)</summary><ul className="issue-list info">{grouped.info.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}{issue.file && <small>{issue.file}</small>}</li>)}</ul></details>}
         </div>}
-        {result && <p className="settings-feedback success" role="status">EPUB gerado ({formatSize(result.size)}): {result.path} <button className="link-button" type="button" onClick={() => void revealItemInDir(result.path)}>Mostrar na pasta</button></p>}
+        {result && <p className="settings-feedback success" role="status">EPUB gerado ({formatSize(result.size)}){wm.enabled && wm.recipient ? ` com marca para ${wm.recipient}` : ""}: {result.path} <button className="link-button" type="button" onClick={() => void revealItemInDir(result.path)}>Mostrar na pasta</button></p>}
         <div className="settings-actions">
           <button className="secondary-button" type="button" onClick={() => void runValidate()} disabled={disabled || !info}>{busy === "validating" ? "Validando…" : "Validar"}</button>
           <button className="primary-button" type="button" onClick={() => void runBuild()} disabled={disabled || !info}>{busy === "building" ? "Gerando…" : "Gerar EPUB…"}</button>

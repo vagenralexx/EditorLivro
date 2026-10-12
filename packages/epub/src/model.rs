@@ -29,6 +29,8 @@ pub struct BuildRequest {
     pub chapters: Vec<String>,
     /// Imagem de capa opcional (caminho absoluto).
     pub cover: Option<String>,
+    /// Marca d'água por exemplar (opcional).
+    pub watermark: Option<crate::watermark::WatermarkOptions>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -109,6 +111,7 @@ pub struct BuildOutcome {
     pub identifier: String,
     pub mode: ProjectMode,
     pub report: Report,
+    pub watermark: Option<crate::watermark::WatermarkInfo>,
 }
 
 /// Arquivo do pacote final (`path` é o caminho dentro do ZIP).

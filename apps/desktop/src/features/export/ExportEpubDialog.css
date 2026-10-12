@@ -18,3 +18,10 @@
 .app-night .issue-list.error { color: #ff9aa8; }
 .app-night .issue-list.warning { color: #f0c36a; }
 .app-night .issue-list.info, .app-night .export-report summary { color: #aebfd1; }
+.watermark-box { margin-top: 14px; padding: 8px 12px; border: 1px solid #d8e2ef; border-radius: 10px; font-size: 12px; }
+.watermark-box summary { cursor: pointer; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #5b6b82; }
+.watermark-box .muted-note { margin: 8px 0; color: #5b6b82; font-size: 11px; line-height: 1.45; }
+.check-row { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; color: #42516a; }
+.watermark-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.watermark-actions small { color: #7b8aa0; }
+.app-night .watermark-box { border-color: #2d3d4d; }

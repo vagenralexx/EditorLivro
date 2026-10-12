@@ -13,10 +13,12 @@ mod scan;
 mod text;
 mod util;
 mod validate;
+mod watermark;
 mod write;
 mod xhtml;
 
 pub use model::*;
+pub use watermark::{detect_in_epub as detect_watermark, Detection, WatermarkInfo, WatermarkOptions};
 pub use text::{lines_from_xhtml, read_source, ChapterText};
 
 use std::path::Path;
@@ -25,6 +27,7 @@ struct Prepared {
     package: Package,
     mode: ProjectMode,
     report: Report,
+    watermark: Option<WatermarkInfo>,
 }
 
 fn prepare(request: &BuildRequest) -> Result<Prepared, String> {
@@ -45,9 +48,13 @@ fn prepare(request: &BuildRequest) -> Result<Prepared, String> {
     if package.identifier.is_empty() {
         package.identifier = request.metadata.identifier.clone();
     }
+    let watermark = request.watermark.as_ref().and_then(|options| watermark::apply(&mut package, options, &mut report));
     validate::validate_package(&package, &mut report);
-    Ok(Prepared { package, mode, report })
+    Ok(Prepared { package, mode, report, watermark })
 }
+
+/// Data/hora UTC atual (AAAA-MM-DDThh:mm:ssZ).
+pub fn now_utc() -> String { util::utc_timestamp() }
 
 /// Descreve a pasta do projeto: modo, metadados detectados e se há capa.
 pub fn inspect(root: &str) -> Result<ProjectInfo, String> {
@@ -102,6 +109,7 @@ pub fn build(request: &BuildRequest, output: &str) -> Result<BuildOutcome, Build
         identifier: prepared.package.identifier,
         mode: prepared.mode,
         report: prepared.report,
+        watermark: prepared.watermark,
     })
 }
 

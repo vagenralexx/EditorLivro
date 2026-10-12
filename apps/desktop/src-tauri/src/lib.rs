@@ -569,11 +569,46 @@ async fn generate_chapter_recap(app: tauri::AppHandle, input: RecapInput) -> Res
     parse_recap(&raw)
 }
 
+// ---- Exemplares com marca d'água (registro de quem recebeu cada código) ----
+
+const COPIES_FILE: &str = ".livro-exemplares.json";
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct CopyRecord { token: String, recipient: String, title: String, created_at: String, file: String }
+
+fn read_copies(root: &str) -> Result<Vec<CopyRecord>, String> {
+    let path = project_files::resolve(root, COPIES_FILE)?;
+    if !path.is_file() { return Ok(Vec::new()); }
+    let text = fs::read_to_string(&path).map_err(|error| format!("Não foi possível ler o registro de exemplares: {error}"))?;
+    serde_json::from_str(&text).map_err(|error| format!("O registro de exemplares está corrompido (nada foi alterado): {error}"))
+}
+
+#[tauri::command]
+fn copies_list(root: String) -> Result<Vec<CopyRecord>, String> { read_copies(&root) }
+
+#[tauri::command]
+fn copies_register(root: String, mut record: CopyRecord) -> Result<Vec<CopyRecord>, String> {
+    record.created_at = book_epub::now_utc();
+    let mut all = read_copies(&root)?;
+    all.retain(|existing| existing.token != record.token);
+    all.push(record);
+    let json = serde_json::to_string_pretty(&all).map_err(|error| error.to_string())?;
+    project_files::write_atomic(&project_files::resolve(&root, COPIES_FILE)?, json.as_bytes())?;
+    Ok(all)
+}
+
+/// Lê a marca forense de um .epub suspeito.
+#[tauri::command]
+async fn epub_detect_watermark(path: String) -> Result<Option<book_epub::Detection>, String> {
+    run_blocking(move || book_epub::detect_watermark(&path)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, copies_list, copies_register, epub_detect_watermark])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 
