@@ -1,0 +1,70 @@
+# categoria<TAB>padrão (regex)<TAB>substituição — origem: tools/corrigir_fluidez_ptbr.py da skill
+ANGLICISMOS_MOVIMENTO	\bAlcançando\b	Estendendo a mão
+ANGLICISMOS_MOVIMENTO	\balcançando\b	estendendo a mão
+ANGLICISMOS_MOVIMENTO	\balcançou e\b	estendeu a mão e
+ANGLICISMOS_MOVIMENTO	\balcançou para\b	estendeu a mão para
+ANGLICISMOS_MOVIMENTO	\bEnrolando os braços no\b	Passando os braços ao redor do
+ANGLICISMOS_MOVIMENTO	\bEnrolando os braços na\b	Passando os braços ao redor da
+ANGLICISMOS_MOVIMENTO	\benrolando os braços no\b	passando os braços ao redor do
+ANGLICISMOS_MOVIMENTO	\benrolando os braços na\b	passando os braços ao redor da
+ANGLICISMOS_MOVIMENTO	\bEnrolando os braços mais apertados no\b	Apertando os braços ao redor do
+ANGLICISMOS_MOVIMENTO	\bse enrolou no quadril\b	agarrou o quadril
+ANGLICISMOS_MOVIMENTO	\bse enrolou na cintura\b	agarrou a cintura
+ANGLICISMOS_MOVIMENTO	\bse enrolou ao redor dele\b	se agarrou a ele
+ANGLICISMOS_MOVIMENTO	\bse enrolou ao redor dela\b	se agarrou a ela
+ANGLICISMOS_MOVIMENTO	\benganou as coxas sobre\b	colocou as coxas sobre
+ANGLICISMOS_MOVIMENTO	\benganar as coxas sobre\b	colocar as coxas sobre
+ANGLICISMOS_MOVIMENTO	\bEnganando uma das pernas\b	Colocando uma das pernas
+ANGLICISMOS_MOVIMENTO	\benganando uma das pernas\b	colocando uma das pernas
+ANGLICISMOS_MOVIMENTO	\bas enganou sobre\b	as colocou sobre
+ANGLICISMOS_MOVIMENTO	\ba cavaleiro no colo\b	montada no colo
+ANGLICISMOS_MOVIMENTO	\ba cavaleiro sobre\b	montada sobre
+ANGLICISMOS_MOVIMENTO	\bsentando a cavaleiro\b	sentando montada
+ANGLICISMOS_MOVIMENTO	\bse sentou a cavaleiro\b	se sentou montada
+ANGLICISMOS_EXPRESSAO	\barrastou as palavras\b	disse arrastado
+ANGLICISMOS_EXPRESSAO	\barrastar as palavras\b	falar arrastado
+ANGLICISMOS_EXPRESSAO	\bnuzzlar\b	roçar o rosto
+ANGLICISMOS_EXPRESSAO	\bnuzzlou\b	roçou o rosto
+ANGLICISMOS_EXPRESSAO	\bnuzzlando\b	roçando o rosto
+ANGLICISMOS_EXPRESSAO	\bos lábios enrolados sob os dentes\b	mordia os lábios
+ANGLICISMOS_EXPRESSAO	\blábios enrolados sob os dentes\b	mordendo os lábios
+ANGLICISMOS_EXPRESSAO	\bSuavizando a voz\b	Com a voz mais suave
+ANGLICISMOS_EXPRESSAO	\bsuavizando a voz\b	com a voz mais suave
+ANGLICISMOS_EXPRESSAO	\bclareou a garganta\b	pigarreou
+ANGLICISMOS_EXPRESSAO	\bClarear a garganta\b	Pigarrear
+ANGLICISMOS_EXPRESSAO	\barqueou uma sobrancelha desafiadoramente\b	ergueu uma sobrancelha desafiadora
+ANGLICISMOS_EXPRESSAO	\barqueou uma sobrancelha\b	ergueu uma sobrancelha
+ANGLICISMOS_PERCEPCAO	\bInclinando a cabeça para trás\b	Erguendo a cabeça
+ANGLICISMOS_PERCEPCAO	\binclinando a cabeça para trás\b	erguendo a cabeça
+ANGLICISMOS_PERCEPCAO	\bForçando as pálpebras a abrirem\b	Abrindo os olhos com esforço
+ANGLICISMOS_PERCEPCAO	\bforçando as pálpebras a abrirem\b	abrindo os olhos com esforço
+ANGLICISMOS_PERCEPCAO	\bForçando os olhos a abrirem\b	Abrindo os olhos com esforço
+ANGLICISMOS_PERCEPCAO	\bforçando os olhos a abrirem\b	abrindo os olhos com esforço
+CONSTRUCOES_EROTICAS	\bse sobrepondo ao\b	somando-se ao
+CONSTRUCOES_EROTICAS	\bse sobrepondo à\b	somando-se à
+CONSTRUCOES_EROTICAS	\bbombeando-a cheia do clímax\b	enchendo-a com o gozo
+CONSTRUCOES_EROTICAS	\bbombeando-a cheia de\b	enchendo-a com
+CONSTRUCOES_EROTICAS	\bempurrões curtos e martelantes\b	estocadas curtas e brutais
+CONSTRUCOES_EROTICAS	\bem empurrões curtos\b	em estocadas curtas
+CONSTRUCOES_EROTICAS	\bno compasso dos empurrões\b	no compasso das estocadas
+CONSTRUCOES_EROTICAS	\bondulou os quadris sobre ele\b	ondulou os quadris dela sobre ele
+CONSTRUCOES_EROTICAS	\bse enrolava cada vez mais apertado\b	crescia cada vez mais intenso
+CONSTRUCOES_EROTICAS	\bum orgasmo se enrolou\b	um orgasmo cresceu
+CONSTRUCOES_EROTICAS	\ba tensão se enrolando\b	a tensão crescendo
+OUTRAS_MELHORIAS	\bCambaleando nos pés\b	Cambaleando
+OUTRAS_MELHORIAS	\bcambaleando nos pés\b	cambaleando
+OUTRAS_MELHORIAS	\btropeçou ao lado de\b	seguiu ao lado de
+OUTRAS_MELHORIAS	\bsoltou um bafo explosivo\b	soltou o ar num suspiro explosivo
+OUTRAS_MELHORIAS	\bsoltou um bafo de alívio\b	suspirou aliviada
+OUTRAS_MELHORIAS	\bsoltou um bafo de\b	soltou o ar com
+OUTRAS_MELHORIAS	\bsoltou um bafo\b	soltou o ar
+OUTRAS_MELHORIAS	\bSoltando o ar\b	Respirando fundo
+OUTRAS_MELHORIAS	\bsoltando o ar\b	respirando fundo
+OUTRAS_MELHORIAS	\bGalvanizados\b	Animados
+OUTRAS_MELHORIAS	\bgalvanizados\b	animados
+OUTRAS_MELHORIAS	\bbalançando-a nos braços\b	pegando-a nos braços
+OUTRAS_MELHORIAS	\bbalançando-o nos braços\b	pegando-o nos braços
+OUTRAS_MELHORIAS	\ba erguendo de e para longe\b	erguendo-a e afastando
+OUTRAS_MELHORIAS	\ba erguendo e afastando\b	erguendo-a e afastando
+REDUNDANCIAS	\bse agarravam da buceta\b	se agarravam
+REDUNDANCIAS	\bse agarravam do pau\b	se agarravam

@@ -64,3 +64,44 @@ Não li o código desses projetos; a comparação vem só das descrições públ
 - Em modo `extracted`, EPUB 2 é reempacotado como EPUB 2 (com aviso); não há conversão automática para EPUB 3, nem troca de capa ou série.
 - A ordem dos capítulos no modo "pasta" é a do painel (ordem natural dos nomes), não um `spine` editável.
 - O Kindle Previewer/KDP não foram executados.
+
+---
+
+# Rodada 3 — timeouts e uso da skill dentro do app
+
+## Timeouts (causa e correção)
+
+Toda análise era **uma requisição única, sem streaming, com teto fixo de 90 s para a resposta inteira**. Qualquer modelo que demorasse (fila em plano gratuito, modelo de raciocínio) estourava o teto mesmo funcionando; só modelos rápidos, como o DeepSeek Flash da NVIDIA, passavam. Agora (`src-tauri/src/chat.rs`):
+
+- Resposta em **streaming (SSE)**. Limites: espera na fila 300 s, **silêncio** entre pedaços 120 s, teto absoluto 900 s. Enquanto o servidor envia algo (inclusive o raciocínio), a análise continua.
+- Progresso ao vivo na interface (fila → raciocínio → escrita) e botão **Cancelar**.
+- Mensagens específicas (fila cheia, servidor parou de enviar, limite de raciocínio) em vez de "excedeu 90 s".
+- Blocos `<think>…</think>` são removidos; provedores que ignoram `stream` continuam funcionando.
+- Testado com um servidor SSE local simulado (fluxo lento mas progredindo de 4 s com limite de inatividade de 2 s completa; silêncio, fila, cancelamento, JSON puro e erro HTTP).
+- **Não testado com chaves reais** dos provedores. Se ainda houver timeout, o log (`IA: falha provider=… elapsed=…`) diz em qual fase.
+
+## Mapa: o que da skill entrou no app
+
+| Item da skill | No app |
+|---|---|
+| 20 padrões anti-IA (`analise.md`) | 6 detectados por regra no **Diagnóstico instantâneo** (#1, #2, #3, #8, #11, #15) como candidatos, com densidade por 3 mil palavras vs. meta do gênero; os outros 14 na análise por IA **Varredura anti-IA** |
+| Metas por gênero (anti-IA, diálogo %, limiar Genesis) | Seletor de **gênero por projeto**; metas aplicadas ao diagnóstico e aos prompts |
+| Diálogo: % por gênero, abuso de tag (>40%) | Diagnóstico instantâneo + perfil **Diálogo** |
+| Ritmo (variação de frase, aceleração/desaceleração) | Diagnóstico instantâneo (heurística por tamanho de frase) |
+| Hook Craft (abertura proibida) | Diagnóstico instantâneo (clima, acordar, backstory, abstração) + perfil **Hook e pull** |
+| Genesis Score V3.7 | Perfil **Genesis Score**: a IA dá as 7 notas com evidência; **o app calcula** Floor×0,4 + Média×0,6 e compara com o limiar do gênero |
+| `/quickscan`, `/voz`, `/dialogo`, `/hook`, `/caos`, `/revisao-sistemica` | Perfis novos (11 no total), com os módulos da skill dentro do prompt |
+| Níveis de modelo Rápido/Padrão/Máximo | Dica exibida por perfil |
+| Tabela de equivalências / suavização (`SKILL.md`) | Modo **tradução**: alertas de possível suavização (opt-in) |
+| `corrigir_fluidez_ptbr.py` (69 regras) | Modo tradução: viram **sugestões antes/depois** com botão Aplicar (nunca em lote) |
+| `glossario.json` (`producao.md`) | Lido da pasta do projeto e enviado à IA (nomes e termos protegidos) |
+| `cenas-eroticas.md` | Opção "contém cenas adultas": preserva intensidade e consistência de registro; sem lista de termos explícitos no código |
+| `producao.md` (EPUB) | Exportar EPUB (rodada 2) |
+
+## Não implementado (decisão e motivo)
+
+- **Comparação 1:1 com o EPUB original** (`/revisar-traducao`): o app não tem tela para o original; o perfil analisa só o PT-BR e pede conferência. Exige UI de dois documentos.
+- **Sistema de blocos / LOG-RECAP / `/status`, bíblia de personagens, linha do tempo, mapa de fios:** exigem memória do projeto entre capítulos (arquivo `.recap` por projeto). É o maior ganho restante, mas é uma feature própria.
+- **`/audiolivro` (ElevenLabs), `/sinopse`, `/capa`, `/persona`, `/pesquisar`, `/serie`:** perfis de criação sem manuscrito de entrada; baixa prioridade para um editor.
+- **Remoção de watermark/DRM** descrita em `producao.md`: deliberadamente fora.
+- Anti-IA por regra tem **falsos positivos** (ex.: "dançar" literal) e não substitui a leitura.

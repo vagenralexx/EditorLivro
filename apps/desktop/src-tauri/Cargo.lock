@@ -999,6 +999,7 @@ version = "0.2.0"
 dependencies = [
  "book_epub",
  "keyring",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

@@ -1,0 +1,37 @@
+.scan-panel, .genesis-card { margin-top: 12px; padding: 10px 12px; border: 1px solid #d8e2ef; border-radius: 10px; background: #f7fafd; font-size: 11px; line-height: 1.45; color: #31435e; }
+.scan-title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.scan-title span, .scan-muted { color: #7b8aa0; font-size: 10px; }
+.scan-muted { margin: 6px 0 0; }
+.scan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+.scan-grid div { padding: 6px 8px; border-radius: 8px; background: #fff; border: 1px solid #e3ebf4; }
+.scan-grid b { display: block; font-size: 15px; }
+.scan-grid small { color: #7b8aa0; font-size: 9px; }
+.scan-grid .warn { border-color: #e8b4bc; background: #fff4f5; }
+.scan-details { margin-top: 8px; }
+.scan-details summary { cursor: pointer; font-weight: 700; }
+.scan-details ul, .scan-notes { margin: 6px 0 0; padding-left: 16px; }
+.scan-notes { list-style: none; padding-left: 0; }
+.scan-notes li { margin: 5px 0; }
+.scan-notes li span { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 6px; background: #e6eef8; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.scan-panel q, .genesis-card q { display: block; margin: 2px 0 0; color: #6a7a92; font-style: italic; quotes: "“" "”"; }
+.fluency-list { list-style: none; padding-left: 0 !important; }
+.fluency-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0; }
+.fluency-list button { margin-left: auto; padding: 3px 8px; border: 1px solid #b8d7de; border-radius: 6px; color: #0a6d83; background: #fff; font: inherit; font-size: 10px; font-weight: 700; }
+.genesis-card header { display: flex; flex-direction: column; gap: 2px; }
+.genesis-card header span.ok { color: #1f7a56; font-weight: 800; font-size: 10px; }
+.genesis-card header span.warn { color: #a3404d; font-weight: 800; font-size: 10px; }
+.genesis-card table { width: 100%; margin-top: 8px; border-collapse: collapse; }
+.genesis-card th { width: 34%; padding: 4px 6px 4px 0; text-align: left; font-weight: 700; vertical-align: top; }
+.genesis-card td { padding: 4px 4px; vertical-align: top; }
+.genesis-card td:first-of-type { font-weight: 800; }
+.genesis-card tr.floor th, .genesis-card tr.floor td:first-of-type { color: #a3404d; }
+.genesis-card small { display: block; margin-top: 6px; color: #7b8aa0; font-size: 9px; }
+.project-settings { margin-top: 10px; padding: 10px 12px; border: 1px solid #d8e2ef; border-radius: 10px; background: #fff; font-size: 11px; }
+.project-settings label.check { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; color: #42516a; }
+.project-settings .glossary-chip { margin-top: 6px; color: #1f7a56; font-weight: 700; }
+.tier-hint { display: block; margin-top: 4px; color: #7b8aa0; }
+.app-night .scan-panel, .app-night .genesis-card, .app-night .project-settings { border-color: #2d3d4d; background: #162433; color: #c9d8e6; }
+.app-night .scan-grid div { background: #1b2a3a; border-color: #2d3d4d; }
+.app-night .scan-grid .warn { background: #3a2229; border-color: #6b3945; }
+.app-night .scan-notes li span { background: #26394b; }
+.app-night .fluency-list button { background: #1b2a3a; color: #bfe9f2; border-color: #3b5063; }

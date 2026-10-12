@@ -102,3 +102,19 @@ export function textFromXhtml(source: string) {
   container.innerHTML = document.bodyHtml;
   return (container.textContent ?? "").replace(/\s+/gu, " ").trim();
 }
+
+const BLOCK_TAGS = "p, h1, h2, h3, h4, h5, h6, li, blockquote, div, section, tr";
+
+/**
+ * Texto do XHTML preservando as quebras de parágrafo (uma linha por bloco).
+ * Os analisadores (diálogo, ritmo, aberturas) dependem dessas quebras.
+ */
+export function paragraphTextFromXhtml(source: string) {
+  const document = parseEditableXhtml(source);
+  const container = globalThis.document?.createElement("div");
+  if (!container) return document.bodyHtml.replace(/<\/(?:p|h\d|li|blockquote|div)>/giu, "\n").replace(/<[^>]*>/gu, " ").replace(/[ \t]+/gu, " ").trim();
+  container.innerHTML = document.bodyHtml;
+  const blocks = Array.from(container.querySelectorAll(BLOCK_TAGS)).filter((element) => !element.querySelector(BLOCK_TAGS));
+  const lines = (blocks.length ? blocks.map((element) => element.textContent ?? "") : [container.textContent ?? ""]);
+  return lines.map((line) => line.replace(/\s+/gu, " ").trim()).filter(Boolean).join("\n");
+}
