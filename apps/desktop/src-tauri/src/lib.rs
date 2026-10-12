@@ -15,6 +15,8 @@ mod glossary;
 mod model_capabilities;
 mod project_files;
 mod project_state;
+mod records;
+mod snapshots;
 mod providers;
 mod skill;
 mod vault;
@@ -500,22 +502,85 @@ fn compare_translation(original: Vec<String>, translated: Vec<String>, glossary:
 
 // ---- Caderno do livro (memória entre capítulos) ----
 
+/// Resolve a pasta do caderno do projeto: seção `caderno` de `.livro/projeto.json`
+/// (caminho relativo à pasta do projeto ou absoluto, ex.: o vault Obsidian da série).
+fn vault_for(root: &str) -> Result<vault::Vault, String> {
+    let state = project_state::load(root)?.state;
+    let section = state.get("caderno");
+    let path = section.and_then(|c| c.get("caminho")).and_then(|v| v.as_str()).filter(|p| !p.trim().is_empty()).unwrap_or(vault::DEFAULT_DIR);
+    let dir = if std::path::Path::new(path).is_absolute() { std::path::PathBuf::from(path) } else { std::path::Path::new(root).join(path) };
+    let dir = fs::canonicalize(&dir).unwrap_or(dir);
+    let mapping: std::collections::BTreeMap<String, String> = section.and_then(|c| c.get("mapeamento")).and_then(|m| serde_json::from_value(m.clone()).ok()).unwrap_or_default();
+    Ok(vault::Vault::new(&dir.to_string_lossy(), vault::KindMap::from_entries(&mapping)))
+}
+
+/// Snapshot automático (no máximo 1 a cada 5 min) antes de operações que alteram várias notas.
+fn safety_snapshot(root: &str, vault: &vault::Vault, reason: &str) {
+    let _ = snapshots::auto(root, Some(std::path::Path::new(vault.dir())), reason);
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VaultLocation { path: String, is_default: bool, exists: bool, mapping: std::collections::BTreeMap<String, String> }
+
 #[tauri::command]
-fn vault_index(root: String) -> Result<vault::VaultIndex, String> { vault::index(&root) }
+fn vault_location(root: String) -> Result<VaultLocation, String> {
+    let state = project_state::load(&root)?.state;
+    let section = state.get("caderno");
+    let configured = section.and_then(|c| c.get("caminho")).and_then(|v| v.as_str()).filter(|p| !p.trim().is_empty());
+    let vault = vault_for(&root)?;
+    let mapping = section.and_then(|c| c.get("mapeamento")).and_then(|m| serde_json::from_value(m.clone()).ok()).unwrap_or_default();
+    Ok(VaultLocation { path: vault.dir().to_string(), is_default: configured.is_none(), exists: std::path::Path::new(vault.dir()).is_dir(), mapping })
+}
+
+/// Aponta o caderno para outra pasta (ex.: o vault Obsidian da trilogia). `path` vazio volta ao padrão.
+/// O caminho é guardado relativo ao projeto quando fica dentro dele.
 #[tauri::command]
-fn vault_read(root: String, path: String) -> Result<String, String> { vault::read_note(&root, &path) }
+fn vault_set_location(root: String, path: Option<String>, mapping: std::collections::BTreeMap<String, String>) -> Result<VaultLocation, String> {
+    let stored = match path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        None => serde_json::Value::Null,
+        Some(chosen) => {
+            let target = std::path::Path::new(chosen);
+            if !target.is_dir() { return Err("A pasta escolhida não existe.".to_string()); }
+            let canonical = fs::canonicalize(target).map_err(|e| e.to_string())?;
+            let project = fs::canonicalize(&root).map_err(|e| e.to_string())?;
+            let value = match canonical.strip_prefix(&project) { Ok(inside) => inside.to_string_lossy().replace('\\', "/"), Err(_) => canonical.to_string_lossy().into_owned() };
+            serde_json::json!({ "caminho": value, "mapeamento": mapping })
+        }
+    };
+    project_state::patch(&root, "caderno", stored)?;
+    vault_location(root)
+}
+
+/// Sugere o mapeamento pasta → tipo olhando os nomes das pastas do vault.
 #[tauri::command]
-fn vault_write(root: String, path: String, content: String) -> Result<(), String> { vault::write_note(&root, &path, &content) }
+fn vault_detect_mapping(path: String) -> std::collections::BTreeMap<String, String> { vault::detect_mapping(&path) }
+
 #[tauri::command]
-fn vault_create(root: String, kind: vault::Kind, title: String) -> Result<String, String> { vault::create_note(&root, kind, &title) }
+fn vault_index(root: String) -> Result<vault::VaultIndex, String> { vault_for(&root)?.index() }
 #[tauri::command]
-fn vault_delete(root: String, path: String) -> Result<(), String> { vault::delete_note(&root, &path) }
+fn vault_read(root: String, path: String) -> Result<String, String> { vault_for(&root)?.read_note(&path) }
 #[tauri::command]
-fn vault_rename(root: String, path: String, new_title: String) -> Result<vault::RenameResult, String> { vault::rename_note(&root, &path, &new_title) }
+fn vault_write(root: String, path: String, content: String) -> Result<(), String> { vault_for(&root)?.write_note(&path, &content) }
 #[tauri::command]
-fn vault_timeline(root: String) -> Result<Vec<vault::TimelineEntry>, String> { vault::timeline(&root) }
+fn vault_create(root: String, kind: vault::Kind, title: String) -> Result<String, String> { vault_for(&root)?.create_note(kind, &title) }
 #[tauri::command]
-fn vault_apply_recap(root: String, chapter: String, order: u32, recap: vault::Recap) -> Result<Vec<vault::Change>, String> { vault::apply_recap(&root, &chapter, order, &recap) }
+fn vault_delete(root: String, path: String) -> Result<(), String> { let v = vault_for(&root)?; safety_snapshot(&root, &v, "antes-de-excluir"); v.delete_note(&path) }
+#[tauri::command]
+fn vault_rename(root: String, path: String, new_title: String) -> Result<vault::RenameResult, String> { let v = vault_for(&root)?; safety_snapshot(&root, &v, "antes-de-renomear"); v.rename_note(&path, &new_title) }
+#[tauri::command]
+fn vault_timeline(root: String) -> Result<Vec<vault::TimelineEntry>, String> { vault_for(&root)?.timeline() }
+#[tauri::command]
+fn vault_apply_recap(root: String, chapter: String, order: u32, recap: vault::Recap) -> Result<Vec<vault::Change>, String> { let v = vault_for(&root)?; safety_snapshot(&root, &v, "antes-do-recap"); v.apply_recap(&chapter, order, &recap) }
+
+// ---- Snapshots do projeto ----
+
+#[tauri::command]
+fn snapshots_list(root: String) -> Result<Vec<snapshots::SnapshotInfo>, String> { snapshots::list(&root) }
+#[tauri::command]
+fn snapshot_create(root: String, label: String) -> Result<snapshots::SnapshotInfo, String> { let v = vault_for(&root)?; snapshots::create(&root, Some(std::path::Path::new(v.dir())), &label) }
+#[tauri::command]
+fn snapshot_restore(root: String, name: String) -> Result<snapshots::RestoreResult, String> { let v = vault_for(&root)?; snapshots::restore(&root, Some(std::path::Path::new(v.dir())), &name) }
 
 fn read_chapter_lines(root: &str, paths: &[String]) -> Result<Vec<Vec<String>>, String> {
     paths.iter().take(500).map(|path| {
@@ -528,13 +593,13 @@ fn read_chapter_lines(root: &str, paths: &[String]) -> Result<Vec<Vec<String>>, 
 /// Quantas vezes cada nota é citada em cada capítulo do projeto.
 #[tauri::command]
 async fn vault_mentions(root: String, paths: Vec<String>) -> Result<Vec<vault::NoteMentions>, String> {
-    run_blocking(move || vault::mentions(&root, &read_chapter_lines(&root, &paths)?)).await
+    run_blocking(move || vault_for(&root)?.mentions(&read_chapter_lines(&root, &paths)?)).await
 }
 
 /// Memória (recaps anteriores + notas dos elementos citados + fios abertos) para os prompts.
 #[tauri::command]
 fn vault_memory(root: String, current: Vec<String>, previous_chapters: Vec<String>) -> Result<vault::MemoryContext, String> {
-    vault::memory(&root, &current, &previous_chapters)
+    vault_for(&root)?.memory(&current, &previous_chapters)
 }
 
 #[derive(Deserialize)]
@@ -558,7 +623,7 @@ struct RecapInput {
 async fn generate_chapter_recap(app: tauri::AppHandle, input: RecapInput) -> Result<vault::Recap, String> {
     if input.text.trim().is_empty() { return Err("O capítulo está vazio.".to_string()); }
     if input.text.chars().count() > MAX_ANALYSIS_CHARS { return Err(format!("O capítulo passa de {MAX_ANALYSIS_CHARS} caracteres; divida-o antes de gerar o recap.")); }
-    let index = vault::index(&input.root)?;
+    let index = vault_for(&input.root)?.index()?;
     let names = |kind: vault::Kind, only_open: bool| -> Vec<String> {
         index.notes.iter().filter(|n| n.kind == kind && (!only_open || n.state.as_deref().map(|s| !s.eq_ignore_ascii_case("fechado")).unwrap_or(true))).take(80).map(|n| n.title.clone()).collect()
     };
@@ -617,7 +682,7 @@ fn project_state_patch(root: String, section: String, value: serde_json::Value) 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch])
+        .invoke_handler(tauri::generate_handler![get_app_bootstrap, save_provider_api_key, delete_provider_api_key, connect_ai_provider, has_provider_api_key, test_ai_provider, get_model_effort_options, analyze_open_document, cancel_ai_analysis, get_skill_catalog, scan_editorial, save_xhtml_document, epub_inspect, epub_validate, epub_build, glossary_load, glossary_save, glossary_defaults, glossary_suggest, original_load, compare_translation, vault_index, vault_read, vault_write, vault_create, vault_delete, vault_rename, vault_timeline, vault_apply_recap, vault_mentions, vault_memory, generate_chapter_recap, vault_location, vault_set_location, vault_detect_mapping, snapshots_list, snapshot_create, snapshot_restore, copies_list, copies_register, epub_detect_watermark, project_state_load, project_state_patch])
         .run(tauri::generate_context!()).expect("erro ao executar o Editor de Livros EPUB");
 }
 

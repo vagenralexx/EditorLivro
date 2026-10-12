@@ -27,6 +27,7 @@ tauri-plugin-fs = "2"
 keyring = "4.2.0"
 regex = "1"
 tokio = { version = "1", features = ["time", "rt", "macros", "sync"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 book_epub = { path = "../../../packages/epub" }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "native-tls"] }
 

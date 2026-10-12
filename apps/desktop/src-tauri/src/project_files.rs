@@ -30,12 +30,24 @@ pub fn ensure_inside(root: &str, absolute: &str) -> Result<PathBuf, String> {
     if canonical.starts_with(&canonical_root) { Ok(canonical) } else { Err("O arquivo está fora da pasta do projeto.".to_string()) }
 }
 
-/// Grava de forma atômica (arquivo temporário + rename), criando pastas se preciso.
+/// Grava de forma durável: arquivo temporário → fsync → rename → fsync da pasta.
+/// Sem o fsync, uma queda de energia pode deixar o arquivo vazio em alguns sistemas de arquivos.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
     if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|error| format!("Não foi possível criar a pasta: {error}"))?; }
     let temp = path.with_extension(format!("tmp-{}", std::process::id()));
-    fs::write(&temp, bytes).map_err(|error| format!("Não foi possível gravar: {error}"))?;
-    fs::rename(&temp, path).map_err(|error| { let _ = fs::remove_file(&temp); format!("Não foi possível concluir a gravação: {error}") })
+    let result = (|| -> std::io::Result<()> {
+        let mut file = fs::File::create(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(error) = result { let _ = fs::remove_file(&temp); return Err(format!("Não foi possível gravar: {error}")); }
+    fs::rename(&temp, path).map_err(|error| { let _ = fs::remove_file(&temp); format!("Não foi possível concluir a gravação: {error}") })?;
+    // Persistir a entrada de diretório (não é possível abrir pastas para fsync no Windows).
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() { if let Ok(dir) = fs::File::open(parent) { let _ = dir.sync_all(); } }
+    Ok(())
 }
 
 #[cfg(test)]

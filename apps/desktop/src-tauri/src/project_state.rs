@@ -1,4 +1,4 @@
-//! Estado do projeto guardado NA PASTA do projeto (`.livro-projeto.json`).
+//! Estado do projeto guardado NA PASTA do projeto (`.livro/projeto.json`).
 //!
 //! Tudo que descreve o livro (gênero, modo tradução, posição de leitura,
 //! original carregado, metadados do EPUB…) mora aqui, não no navegador do app:
@@ -13,8 +13,8 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::fs;
 
-pub const FILE_NAME: &str = ".livro-projeto.json";
-const BACKUP_NAME: &str = ".livro-projeto.json.bak";
+pub const FILE_NAME: &str = ".livro/projeto.json";
+const BACKUP_NAME: &str = "projeto.json.bak";
 const FORMAT_VERSION: u64 = 1;
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
 
@@ -101,6 +101,7 @@ mod tests {
     #[test]
     fn unknown_future_sections_survive_and_names_are_validated() {
         let d = dir();
+        fs::create_dir_all(d.path().join(".livro")).unwrap();
         fs::write(d.path().join(FILE_NAME), r#"{"versao":1,"biblia":{"titulo":"X"}}"#).unwrap();
         patch(r(&d), "epub", json!({"capa": "capa.jpg"})).unwrap();
         let state = load(r(&d)).unwrap().state;
@@ -112,6 +113,7 @@ mod tests {
     fn corrupted_file_is_reported_and_never_overwritten() {
         let d = dir();
         let file = d.path().join(FILE_NAME);
+        fs::create_dir_all(d.path().join(".livro")).unwrap();
         fs::write(&file, "{ isto não é json").unwrap();
         let loaded = load(r(&d)).unwrap();
         assert!(loaded.exists && loaded.error.as_deref().unwrap().contains("erro de formatação"));
@@ -124,16 +126,17 @@ mod tests {
         let d = dir();
         patch(r(&d), "configuracoes", json!({"genero": "memoir"})).unwrap();
         patch(r(&d), "epub", json!({"capa": "a.jpg"})).unwrap();
-        let backup: Value = serde_json::from_str(&fs::read_to_string(d.path().join(BACKUP_NAME)).unwrap()).unwrap();
+        let backup: Value = serde_json::from_str(&fs::read_to_string(d.path().join(".livro").join(BACKUP_NAME)).unwrap()).unwrap();
         assert!(backup.get("configuracoes").is_some() && backup.get("epub").is_none(), "o .bak é a versão anterior");
         patch(r(&d), "leitura", json!({"pagina": 1})).unwrap();
-        let again: Value = serde_json::from_str(&fs::read_to_string(d.path().join(BACKUP_NAME)).unwrap()).unwrap();
+        let again: Value = serde_json::from_str(&fs::read_to_string(d.path().join(".livro").join(BACKUP_NAME)).unwrap()).unwrap();
         assert!(again.get("epub").is_none(), "posição de leitura não gera backup");
     }
 
     #[test]
     fn rejects_paths_outside_and_non_object_files() {
         let d = dir();
+        fs::create_dir_all(d.path().join(".livro")).unwrap();
         fs::write(d.path().join(FILE_NAME), "[1,2]").unwrap();
         assert!(load(r(&d)).unwrap().error.is_some());
         assert!(patch("/nao/existe/mesmo", "epub", json!(1)).is_err());
